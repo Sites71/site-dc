@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0f1a" />
+  <title>💬 Chat Global</title>
+  <meta name="description" content="Chat global em tempo real — 100% estático, hospedado no GitHub Pages com Firebase." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== TELA DE ENTRADA (nome de usuário) ===== -->
+  <div id="login-overlay">
+    <form id="login-form" class="login-card">
+      <div class="login-logo">💬</div>
+      <h1>Chat Global</h1>
+      <p>Converse com todo mundo, em tempo real.</p>
+      <input id="name-input" type="text" placeholder="Escolha seu nome..." maxlength="20" autocomplete="off" required />
+      <button type="submit">Entrar no chat ➜</button>
+    </form>
+  </div>
+
+  <!-- ===== CHAT ===== -->
+  <main id="chat" class="hidden">
+    <header>
+      <div class="brand">💬 Chat Global</div>
+      <div class="header-right">
+        <button id="music-btn" type="button" title="Tocar música">🎵</button>
+        <div id="online-count" class="online-pill" title="Usuários conectados agora">🟢 conectando...</div>
+      </div>
+    </header>
+
+    <div id="messages"></div>
+
+    <form id="message-form">
+      <input id="message-input" type="text" placeholder="Digite sua mensagem..." maxlength="500" autocomplete="off" required />
+      <button type="submit" title="Enviar">➤</button>
+    </form>
+  </main>
+
+  <!-- 🎵 Música de fundo (clique no botão do topo para tocar) -->
+  <audio id="bg-music" src="musica.mp3" loop preload="none"></audio>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
