@@ -27,6 +27,7 @@
     <header>
       <div class="brand">💬 Chat Global</div>
       <div class="header-right">
+        <button id="call-btn" type="button" title="Chamada de voz em grupo">📞</button>
         <button id="stream-btn" type="button" title="Transmitir sua tela">🖥️</button>
         <button id="music-btn" type="button" title="Tocar música">🎵</button>
         <div id="online-count" class="online-pill" title="Usuários conectados agora">🟢 conectando...</div>
@@ -50,6 +51,46 @@
   <div id="watch-overlay" class="watch-overlay hidden">
     <video id="watch-video" autoplay playsinline></video>
     <button id="watch-close" type="button">✕ Sair da transmissão</button>
+  </div>
+
+  <!-- 📞 Painel de chamada: escolher quem chamar -->
+  <div id="call-panel" class="call-panel hidden">
+    <div class="call-box">
+      <div class="call-box-head">
+        <h3>📞 Chamada de voz em grupo</h3>
+        <button id="call-panel-close" type="button" class="icon-btn">✕</button>
+      </div>
+      <p id="call-online-hint">Selecione quem você quer chamar:</p>
+      <div id="call-user-list" class="call-user-list"></div>
+      <button id="start-call-btn" type="button" class="btn-primary">Iniciar chamada ➜</button>
+    </div>
+  </div>
+
+  <!-- 🔔 Toque de chamada recebida -->
+  <div id="ring-overlay" class="ring-overlay hidden">
+    <div class="ring-box">
+      <div class="ring-icon">📞</div>
+      <h3 id="ring-title">Estão te chamando!</h3>
+      <p id="ring-sub">Chamada de voz em grupo</p>
+      <div class="ring-actions">
+        <button id="ring-accept" type="button" class="btn-accept">✅ Atender</button>
+        <button id="ring-decline" type="button" class="btn-decline">✖ Recusar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔊 Painel da chamada em andamento -->
+  <div id="call-overlay" class="call-overlay hidden">
+    <div class="call-head">
+      <span id="call-room-label">🔊 Chamada</span>
+      <button id="call-leave" type="button" class="btn-leave">🚪 Sair</button>
+    </div>
+    <div id="call-members" class="call-members"></div>
+    <div class="call-controls">
+      <button id="call-mute" type="button" class="ctl-btn" title="Microfone">🎙️</button>
+      <button id="call-invite-more" type="button" class="ctl-btn" title="Convidar mais">➕</button>
+    </div>
+    <div id="call-audio-container" class="hidden"></div>
   </div>
 
   <!-- 🎵 Música de fundo (clique no botão do topo para tocar) -->

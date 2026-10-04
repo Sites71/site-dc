@@ -12,6 +12,16 @@ O site traz o beat **"Minha Quebrada"** como música de fundo opcional. Como os 
 
 > Créditos: "[FREE] Beat Trap Instrumental – Minha Quebrada" – Prod. ExsBeats.
 
+## 📞 Chamadas de voz em grupo
+
+Clique em **📞** no topo, marque quem está online e clique em **Iniciar chamada**. Os convidados recebem um "toque" na tela com as opções **Atender** ou **Recusar** — só quem é convidado vê a chamada (privada).
+
+- O áudio vai **direto entre os PCs** (WebRTC em malha) — o Firebase só organiza convites e conexões.
+- Durante a chamada: **mute o microfone** (🔇), **convide mais pessoas** (➕) ou saia (🚪).
+- Quem recusa/sai aparece com 🚫/↩️ na lista de membros.
+- Ideal para grupos pequenos (3–8 pessoas): em malha, cada pessoa conecta com todas as outras.
+- Requer **HTTPS** (GitHub Pages ✓) e permissão de microfone.
+
 ## 🖥️ Transmissão de tela ao vivo
 
 Qualquer usuário pode transmitir a tela do PC: clique no botão **🖥️** no topo. Os outros veem um **banner vermelho pulsando** e clicam para assistir.
@@ -61,7 +71,9 @@ git push -u origin main
   "rules": {
     "messages": { ".read": true, ".write": true },
     "presence": { ".read": true, ".write": true },
-    "stream": { ".read": true, ".write": true }
+    "stream": { ".read": true, ".write": true },
+    "calls": { ".read": true, ".write": true },
+    "invites": { ".read": true, ".write": true }
   }
 }
 ```

@@ -110,6 +110,7 @@ function enterChat(name) {
     listenToMessages();
     setupPresence();
     setupStreaming();
+    setupCalls();
     addSystemMessage(`Bem-vindo, ${myName}! 👋`);
   } else {
     addSystemMessage(
@@ -216,11 +217,13 @@ function setupPresence() {
     }
   });
 
-  // Contador de online
+  // Contador de online + lista de usuários (usada nas chamadas)
   onValue(
     ref(db, "presence"),
     (snap) => {
-      const n = snap.exists() ? Object.keys(snap.val()).length : 0;
+      const val = snap.val() || {};
+      onlineUsers = new Map(Object.entries(val));
+      const n = onlineUsers.size;
       onlineEl.textContent = `🟢 ${n} online${n === 1 ? "" : "s"}`;
     },
     () => (onlineEl.textContent = "🟢 —")
@@ -452,3 +455,472 @@ watchBtn.addEventListener("click", () => {
 watchClose.addEventListener("click", () => {
   if (watchingId) stopWatching();
 });
+
+// ------------------------------------------------------------
+// 📞 Chamadas de voz em grupo (WebRTC mesh + Firebase)
+// O áudio vai direto entre os PCs. O Firebase só organiza
+// convites e a troca de dados de conexão entre os pares.
+// ------------------------------------------------------------
+const callBtn = $("call-btn");
+const callPanel = $("call-panel");
+const callPanelClose = $("call-panel-close");
+const callUserList = $("call-user-list");
+const callOnlineHint = $("call-online-hint");
+const startCallBtn = $("start-call-btn");
+const ringOverlay = $("ring-overlay");
+const ringTitle = $("ring-title");
+const ringSub = $("ring-sub");
+const ringAccept = $("ring-accept");
+const ringDecline = $("ring-decline");
+const callOverlay = $("call-overlay");
+const callRoomLabel = $("call-room-label");
+const callMembersEl = $("call-members");
+const callLeave = $("call-leave");
+const callMute = $("call-mute");
+const callInviteMore = $("call-invite-more");
+const callAudioContainer = $("call-audio-container");
+
+let onlineUsers = new Map(); // uid -> { name, hue, at }
+let currentMembers = {};      // membros da minha sala atual
+let callPeers = new Map();    // uid -> { pc, name, hue, audioEl, remoteReady, candsBuf }
+let callUnsubs = [];
+let localMic = null;
+let micOn = true;
+let callRoomId = null;
+let pendingInvite = null;
+let callPanelMode = "start";
+let selectedToCall = new Set();
+
+function setupCalls() {
+  // Detecta convites dirigidos a mim
+  onValue(ref(db, `invites/${myUid}`), (snap) => {
+    const inv = snap.val();
+    if (inv && inv.roomId && !callRoomId) {
+      pendingInvite = inv;
+      ringTitle.textContent = `📞 ${inv.hostName || "Alguém"} está te chamando!`;
+      ringSub.textContent = "Chamada de voz em grupo";
+      ringOverlay.classList.remove("hidden");
+    } else if (!inv) {
+      pendingInvite = null;
+      ringOverlay.classList.add("hidden");
+    }
+  });
+}
+
+// ---------- Painel de seleção ----------
+function openCallPanel(mode) {
+  if (!db) {
+    addSystemMessage("⚠️ Firebase não configurado — chamadas indisponíveis.");
+    return;
+  }
+  callPanelMode = mode;
+  selectedToCall.clear();
+  startCallBtn.textContent = mode === "invite-more" ? "Convidar para a chamada ➜" : "Iniciar chamada ➜";
+  callOnlineHint.textContent =
+    mode === "invite-more" ? "Quem mais você quer chamar?" : "Selecione quem você quer chamar:";
+  renderCallUserList();
+  callPanel.classList.remove("hidden");
+}
+
+function renderCallUserList() {
+  callUserList.innerHTML = "";
+  let any = false;
+  for (const [uid, info] of onlineUsers) {
+    if (uid === myUid) continue;
+    if (callRoomId && currentMembers[uid]) continue; // já está na sala
+    any = true;
+    const row = document.createElement("div");
+    row.className = "call-user";
+
+    const av = document.createElement("span");
+    av.className = "avatar";
+    av.style.background = `hsl(${info.hue ?? 220} 70% 45%)`;
+    av.textContent = (info.name || "?").slice(0, 1).toUpperCase();
+
+    const nm = document.createElement("span");
+    nm.textContent = info.name || "Anônimo";
+
+    const mark = document.createElement("span");
+    mark.textContent = "☐";
+    mark.style.marginLeft = "auto";
+
+    row.append(av, nm, mark);
+    row.addEventListener("click", () => {
+      if (selectedToCall.has(uid)) {
+        selectedToCall.delete(uid);
+        row.classList.remove("selected");
+        mark.textContent = "☐";
+      } else {
+        selectedToCall.add(uid);
+        row.classList.add("selected");
+        mark.textContent = "☑";
+      }
+    });
+    callUserList.appendChild(row);
+  }
+  if (!any) {
+    const p = document.createElement("p");
+    p.className = "call-empty";
+    p.textContent = "Ninguém online além de você agora 😴";
+    callUserList.appendChild(p);
+  }
+}
+
+// ---------- Criar chamada ----------
+async function startCall() {
+  if (!selectedToCall.size) {
+    addSystemMessage("⚠️ Selecione pelo menos uma pessoa para chamar.");
+    return;
+  }
+  const roomId = myUid + "-" + Date.now();
+  const members = {};
+  members[myUid] = { name: myName, hue: myHue, status: "joined" };
+  for (const uid of selectedToCall) {
+    const info = onlineUsers.get(uid);
+    members[uid] = { name: info?.name || "Alguém", hue: info?.hue ?? 220, status: "invited" };
+  }
+
+  await set(ref(db, `calls/${roomId}`), {
+    meta: { host: myUid, hostName: myName, at: serverTimestamp() },
+    members,
+  });
+  for (const uid of selectedToCall) {
+    await set(ref(db, `invites/${uid}`), {
+      roomId,
+      host: myUid,
+      hostName: myName,
+      at: serverTimestamp(),
+    });
+  }
+
+  callPanel.classList.add("hidden");
+  const n = selectedToCall.size;
+  selectedToCall.clear();
+
+  const ok = await enterCallRoom(roomId, true);
+  if (!ok) {
+    await remove(ref(db, `calls/${roomId}`)).catch(() => {});
+    for (const uid of Object.keys(members)) {
+      await remove(ref(db, `invites/${uid}`)).catch(() => {});
+    }
+  } else {
+    addSystemMessage(`📞 Você chamou ${n} pessoa(s) para a chamada.`);
+  }
+}
+
+async function inviteMoreToCall() {
+  if (!callRoomId || !selectedToCall.size) {
+    callPanel.classList.add("hidden");
+    return;
+  }
+  for (const uid of selectedToCall) {
+    const info = onlineUsers.get(uid);
+    await set(ref(db, `calls/${callRoomId}/members/${uid}`), {
+      name: info?.name || "Alguém",
+      hue: info?.hue ?? 220,
+      status: "invited",
+    }).catch(() => {});
+    await set(ref(db, `invites/${uid}`), {
+      roomId: callRoomId,
+      host: myUid,
+      hostName: myName,
+      at: serverTimestamp(),
+    }).catch(() => {});
+  }
+  callPanel.classList.add("hidden");
+  addSystemMessage(`📞 Você convidou ${selectedToCall.size} pessoa(s).`);
+  selectedToCall.clear();
+}
+
+// ---------- Entrar / sair da sala ----------
+async function enterCallRoom(roomId, asHost, hostName) {
+  try {
+    localMic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    addSystemMessage("⚠️ Não consegui acessar seu microfone — verifique a permissão do navegador.");
+    return false;
+  }
+
+  callRoomId = roomId;
+  micOn = true;
+  callMute.textContent = "🎙️";
+  callMute.classList.remove("off");
+  callRoomLabel.textContent = asHost ? "🔊 Sua chamada" : `🔊 Chamada de ${hostName || "alguém"}`;
+  callOverlay.classList.remove("hidden");
+  callBtn.classList.add("on");
+
+  const myMemberRef = ref(db, `calls/${roomId}/members/${myUid}`);
+  await set(myMemberRef, { name: myName, hue: myHue, status: "joined" }).catch(() => {});
+  onDisconnect(myMemberRef).set({ name: myName, hue: myHue, status: "left" });
+
+  callUnsubs.push(
+    onValue(ref(db, `calls/${roomId}/members`), (snap) => {
+      currentMembers = snap.val() || {};
+      reconcileMesh();
+      renderCallMembers();
+    })
+  );
+  callUnsubs.push(onValue(ref(db, `calls/${roomId}/offers/${myUid}`), handleIncomingOffer));
+  callUnsubs.push(onValue(ref(db, `calls/${roomId}/answers/${myUid}`), handleIncomingAnswer));
+  callUnsubs.push(onChildAdded(ref(db, `calls/${roomId}/cands/${myUid}`), handleIncomingCandidate));
+  renderCallMembers();
+  return true;
+}
+
+async function leaveCall() {
+  if (!callRoomId) return;
+  const roomId = callRoomId;
+
+  callUnsubs.forEach((u) => u());
+  callUnsubs = [];
+  callPeers.forEach((entry, uid) => destroyPeerPC(uid));
+  if (localMic) {
+    localMic.getTracks().forEach((t) => t.stop());
+    localMic = null;
+  }
+  callOverlay.classList.add("hidden");
+  callBtn.classList.remove("on");
+  callRoomId = null;
+  currentMembers = {};
+
+  await set(ref(db, `calls/${roomId}/members/${myUid}`), {
+    name: myName,
+    hue: myHue,
+    status: "left",
+  }).catch(() => {});
+
+  // Se não sobrou ninguém na chamada, apaga a sala e os convites pendentes
+  const snap = await get(ref(db, `calls/${roomId}/members`)).catch(() => null);
+  if (snap && snap.exists()) {
+    const members = snap.val();
+    const anyJoined = Object.values(members).some((m) => m && m.status === "joined");
+    if (!anyJoined) {
+      await remove(ref(db, `calls/${roomId}`)).catch(() => {});
+      const inv = await get(ref(db, "invites")).catch(() => null);
+      if (inv && inv.exists()) {
+        for (const [uid, info] of Object.entries(inv.val())) {
+          if (info && info.roomId === roomId) remove(ref(db, `invites/${uid}`)).catch(() => {});
+        }
+      }
+    }
+  }
+  addSystemMessage("🚪 Você saiu da chamada.");
+
+  // Se chegou outro convite enquanto você estava ocupado, mostra agora
+  const myInv = await get(ref(db, `invites/${myUid}`)).catch(() => null);
+  if (myInv && myInv.exists() && myInv.val() && myInv.val().roomId) {
+    pendingInvite = myInv.val();
+    ringTitle.textContent = `📞 ${pendingInvite.hostName || "Alguém"} está te chamando!`;
+    ringSub.textContent = "Chamada de voz em grupo";
+    ringOverlay.classList.remove("hidden");
+  }
+}
+
+// ---------- Malha WebRTC ----------
+function reconcileMesh() {
+  if (!callRoomId) return;
+  for (const [uid] of callPeers) {
+    const m = currentMembers[uid];
+    if (!m || m.status !== "joined") destroyPeerPC(uid);
+  }
+  for (const [uid, m] of Object.entries(currentMembers)) {
+    if (uid === myUid || m.status !== "joined") continue;
+    if (!callPeers.has(uid)) createPeerPC(uid, m);
+  }
+}
+
+function createPeerPC(uid, m) {
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+  const entry = { pc, name: m.name, hue: m.hue, remoteReady: false, candsBuf: [] };
+  callPeers.set(uid, entry);
+
+  if (localMic) localMic.getTracks().forEach((t) => pc.addTrack(t, localMic));
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate && callRoomId) {
+      push(ref(db, `calls/${callRoomId}/cands/${uid}`), {
+        from: myUid,
+        cand: e.candidate.toJSON(),
+      });
+    }
+  };
+
+  pc.ontrack = (e) => {
+    const audio = document.createElement("audio");
+    audio.autoplay = true;
+    audio.srcObject = e.streams[0];
+    audio.play().catch(() => {});
+    entry.audioEl = audio;
+    callAudioContainer.appendChild(audio);
+  };
+
+  // O menor uid faz a oferta (evita os dois lados falarem ao mesmo tempo)
+  if (myUid < uid) {
+    pc.createOffer()
+      .then(async (offer) => {
+        await pc.setLocalDescription(offer);
+        await set(ref(db, `calls/${callRoomId}/offers/${uid}`), {
+          from: myUid,
+          sdp: { type: offer.type, sdp: offer.sdp },
+        });
+      })
+      .catch((err) => console.warn(err));
+  }
+}
+
+function destroyPeerPC(uid) {
+  const entry = callPeers.get(uid);
+  if (!entry) return;
+  try { entry.pc.close(); } catch {}
+  if (entry.audioEl) entry.audioEl.remove();
+  callPeers.delete(uid);
+}
+
+async function handleIncomingOffer(snap) {
+  const data = snap.val();
+  if (!data || !callRoomId || !data.from) return;
+  let entry = callPeers.get(data.from);
+  if (!entry) {
+    const m = currentMembers[data.from] || { name: "Alguém", hue: 220 };
+    createPeerPC(data.from, m);
+    entry = callPeers.get(data.from);
+  }
+  if (!entry || entry.pc.currentRemoteDescription || entry.pc.signalingState !== "stable") return;
+  try {
+    await entry.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    const answer = await entry.pc.createAnswer();
+    await entry.pc.setLocalDescription(answer);
+    await set(ref(db, `calls/${callRoomId}/answers/${data.from}`), {
+      from: myUid,
+      sdp: { type: answer.type, sdp: answer.sdp },
+    });
+  } catch (err) {
+    console.warn(err);
+  }
+}
+
+async function handleIncomingAnswer(snap) {
+  const data = snap.val();
+  if (!data || !data.from) return;
+  const entry = callPeers.get(data.from);
+  if (!entry || entry.pc.currentRemoteDescription) return;
+  try {
+    await entry.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    entry.remoteReady = true;
+    entry.candsBuf.forEach((c) =>
+      entry.pc.addIceCandidate(new RTCIceCandidate(c.cand)).catch(() => {})
+    );
+    entry.candsBuf = [];
+  } catch (err) {
+    console.warn(err);
+  }
+}
+
+function handleIncomingCandidate(snap) {
+  const data = snap.val();
+  if (!data || !data.from) return;
+  const entry = callPeers.get(data.from);
+  if (!entry) return;
+  if (entry.pc.currentRemoteDescription) {
+    entry.pc.addIceCandidate(new RTCIceCandidate(data.cand)).catch(() => {});
+  } else {
+    entry.candsBuf.push(data);
+  }
+}
+
+// ---------- Visual ----------
+function renderCallMembers() {
+  callMembersEl.innerHTML = "";
+  for (const [uid, m] of Object.entries(currentMembers)) {
+    const chip = document.createElement("div");
+    chip.className = "member-chip";
+
+    const av = document.createElement("span");
+    av.className = "avatar";
+    av.style.background = `hsl(${m.hue ?? 220} 70% 45%)`;
+    av.textContent = (m.name || "?").slice(0, 1).toUpperCase();
+
+    const nm = document.createElement("span");
+    nm.textContent = m.name || "Anônimo";
+
+    const st = document.createElement("span");
+    if (m.status === "joined") {
+      st.textContent = uid === myUid ? (micOn ? "🎙️" : "🔇") : "🔊";
+    } else if (m.status === "invited") {
+      st.textContent = "⏳ chamando...";
+    } else if (m.status === "declined") {
+      st.textContent = "🚫 recusou";
+    } else {
+      st.textContent = "↩️ saiu";
+    }
+
+    chip.append(av, nm, st);
+    callMembersEl.appendChild(chip);
+  }
+}
+
+// ---------- Botões ----------
+callBtn.addEventListener("click", () => {
+  if (!db) {
+    addSystemMessage("⚠️ Firebase não configurado.");
+    return;
+  }
+  openCallPanel(callRoomId ? "invite-more" : "start");
+});
+
+callPanelClose.addEventListener("click", () => {
+  callPanel.classList.add("hidden");
+  selectedToCall.clear();
+});
+
+startCallBtn.addEventListener("click", () => {
+  if (callPanelMode === "invite-more") inviteMoreToCall();
+  else startCall();
+});
+
+ringAccept.addEventListener("click", async () => {
+  const inv = pendingInvite;
+  if (!inv || !inv.roomId) return;
+  ringOverlay.classList.add("hidden");
+  pendingInvite = null;
+  remove(ref(db, `invites/${myUid}`)).catch(() => {});
+  const ok = await enterCallRoom(inv.roomId, false, inv.hostName);
+  if (ok) {
+    addSystemMessage(`✅ Você entrou na chamada de ${inv.hostName || "alguém"}.`);
+  } else {
+    set(ref(db, `calls/${inv.roomId}/members/${myUid}`), {
+      name: myName,
+      hue: myHue,
+      status: "left",
+    }).catch(() => {});
+  }
+});
+
+ringDecline.addEventListener("click", () => {
+  const inv = pendingInvite;
+  ringOverlay.classList.add("hidden");
+  pendingInvite = null;
+  if (!inv) return;
+  remove(ref(db, `invites/${myUid}`)).catch(() => {});
+  if (inv.roomId) {
+    set(ref(db, `calls/${inv.roomId}/members/${myUid}`), {
+      name: myName,
+      hue: myHue,
+      status: "declined",
+    }).catch(() => {});
+  }
+  addSystemMessage("🚫 Você recusou a chamada.");
+});
+
+callLeave.addEventListener("click", leaveCall);
+
+callMute.addEventListener("click", () => {
+  if (!localMic) return;
+  micOn = !micOn;
+  localMic.getAudioTracks().forEach((t) => (t.enabled = micOn));
+  callMute.textContent = micOn ? "🎙️" : "🔇";
+  callMute.classList.toggle("off", !micOn);
+  renderCallMembers();
+});
+
+callInviteMore.addEventListener("click", () => openCallPanel("invite-more"));
