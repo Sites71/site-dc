@@ -98,9 +98,10 @@ Um site no GitHub Pages é **público**: qualquer visitante pode abrir o código
 ## 📁 Estrutura
 
 ```
-├── index.html   # interface
-├── style.css    # visual (tema escuro)
-├── app.js       # lógica + integração Firebase
-├── musica.mp3   # música de fundo (créditos acima)
+├── index.html     # interface
+├── style.css      # visual (tema escuro + GIF de fundo)
+├── app.js         # lógica + integração Firebase
+├── musica.mp3     # música de fundo (créditos acima)
+├── background.gif # imagem/GIF animado de fundo do site
 └── README.md
 ```
