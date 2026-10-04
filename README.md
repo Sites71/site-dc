@@ -39,6 +39,24 @@ Qualquer usuário pode transmitir a tela do PC: clique no botão **🖥️** no 
 - O navegador só permite captura de tela em **HTTPS** (GitHub Pages ✓). Abrindo o `index.html` direto do disco (file://) a captura fica bloqueada.
 - Redes muito restritivas podem bloquear a conexão direta (exigiria servidor TURN, não incluído).
 
+## 🔐 Registro, login e conta admin
+
+- Todo mundo cria conta com **nome de usuário + senha** (o e-mail interno é gerado sozinho — ninguém precisa digitar email).
+- A sessão fica salva: reabrir o site entra sozinho. Botão **👋** para sair da conta.
+- As senhas ficam guardadas no **Firebase Authentication** (seguras — ninguém consegue ler).
+- A identidade agora é **permanente**: amigos, conversas e histórico ficam ligados à conta.
+
+### 👑 Conta de administrador (LIMON)
+
+O nome **LIMON** é reservado: o registro só é aceito com a senha do dono (o controle é um hash SHA-256 salvo no `app.js`). Ao entrar como LIMON você ganha:
+
+- 👑 Coroa no seu nome no chat
+- 🗑️ Botão de apagar em cada mensagem (aparece ao passar o mouse, só para você)
+- 🧹 Botão de limpar o chat inteiro
+- 🛑 Botão de encerrar a transmissão de tela de qualquer pessoa
+
+**Trocar a senha do admin:** Firebase Console → Authentication → Users → `limon@chat.limon` → ⋮ → Atualizar senha. Depois atualize o `ADMIN_HASH` no `app.js` com o SHA-256 da nova senha.
+
 ## 🚀 Passo a passo
 
 ### 1. Crie um projeto no Firebase
@@ -50,12 +68,19 @@ Qualquer usuário pode transmitir a tela do PC: clique no botão **🖥️** no 
 2. Escolha a localização mais próxima (ex.: `southamerica-east1`).
 3. Inicie no **modo de teste** (libera leitura/escrita por 30 dias). Para liberar de vez, use as regras da seção abaixo.
 
-### 3. Cole suas credenciais no `app.js`
+### 3. Ative o login (Authentication) — OBRIGATÓRIO
+
+1. Menu: **Build → Authentication → Começar agora**.
+2. Aba **Sign-in method** → clique em **Email/Password** → **Ativar** → **Salvar**.
+
+> Sem isso, registro e login retornam o erro `auth/operation-not-allowed`.
+
+### 4. Cole suas credenciais no `app.js`
 1. **Configurações do projeto (⚙️) → Seus apps → App da Web (ícone `</>`)** → registre o app.
 2. Copie o objeto `firebaseConfig` que aparecer.
 3. Abra o `app.js` e substitua o `firebaseConfig` de exemplo pelo seu. O campo essencial é o `databaseURL`.
 
-### 4. Suba para o GitHub
+### 5. Suba para o GitHub
 ```bash
 git init
 git add .
@@ -66,7 +91,7 @@ git push -u origin main
 ```
 *(Ou simplesmente faça upload dos arquivos pela interface web do GitHub: "Add file → Upload files".)*
 
-### 5. Ative o GitHub Pages
+### 6. Ative o GitHub Pages
 1. No repositório: **Settings → Pages**.
 2. **Source: Deploy from a branch** → Branch: `main` → pasta `/ (root)` → **Save**.
 3. Em ~1 minuto o site estará no ar em:

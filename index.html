@@ -11,15 +11,32 @@
 </head>
 <body>
 
-  <!-- ===== TELA DE ENTRADA (nome de usuário) ===== -->
+  <!-- ===== TELA DE LOGIN / REGISTRO ===== -->
   <div id="login-overlay">
-    <form id="login-form" class="login-card">
+    <div class="login-card">
       <div class="login-logo">💬</div>
       <h1>Chat Global</h1>
       <p>Converse com todo mundo, em tempo real.</p>
-      <input id="name-input" type="text" placeholder="Escolha seu nome..." maxlength="20" autocomplete="off" required />
-      <button type="submit">Entrar no chat ➜</button>
-    </form>
+
+      <form id="login-form">
+        <input id="name-input" type="text" placeholder="Seu nome de usuário" maxlength="20" autocomplete="off" required />
+        <input id="pass-input" type="password" placeholder="Sua senha" minlength="6" autocomplete="current-password" required />
+        <button type="submit">Entrar ➜</button>
+      </form>
+
+      <form id="register-form" class="hidden">
+        <input id="reg-name-input" type="text" placeholder="Escolha um nome de usuário" maxlength="20" autocomplete="off" required />
+               <input id="reg-pass-input" type="password" placeholder="Crie uma senha (mínimo 6)" minlength="6" autocomplete="new-password" required />
+        <button type="submit">Criar conta ➜</button>
+      </form>
+
+      <p class="login-alt">
+        <span id="show-register">Não tem conta? <b>Registre-se</b></span>
+        <span id="show-login" class="hidden">Já tem conta? <b>Entrar</b></span>
+      </p>
+
+      <p id="auth-error" class="auth-error hidden"></p>
+    </div>
   </div>
 
   <!-- ===== CHAT ===== -->
@@ -27,10 +44,13 @@
     <header>
       <div class="brand">💬 Chat Global</div>
       <div class="header-right">
+        <button id="clear-chat" type="button" class="hdr-btn hidden" title="Limpar todo o chat (adm)">🧹</button>
+        <button id="stream-kill" type="button" class="hdr-btn hidden" title="Encerrar transmissão de tela (adm)">🛑</button>
         <button id="friends-btn" type="button" title="Amigos">👥<span id="friends-badge" class="friends-badge hidden"></span></button>
         <button id="call-btn" type="button" title="Chamada de voz em grupo">📞</button>
         <button id="stream-btn" type="button" title="Transmitir sua tela">🖥️</button>
         <button id="music-btn" type="button" title="Tocar música">🎵</button>
+        <button id="logout-btn" type="button" class="hdr-btn" title="Sair da conta">👋</button>
         <div id="online-count" class="online-pill" title="Usuários conectados agora">🟢 conectando...</div>
       </div>
     </header>

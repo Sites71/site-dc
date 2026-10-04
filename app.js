@@ -22,6 +22,13 @@ import {
   limitToLast,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // ✅ Projeto Firebase configurado: site-limon
 // (Essa configuração é pública por design — a segurança fica nas regras do banco)
@@ -50,15 +57,31 @@ const msgInput = $("message-input");
 const onlineEl = $("online-count");
 const musicBtn = $("music-btn");
 const musicEl = $("bg-music");
+const passInput = $("pass-input");
+const registerForm = $("register-form");
+const regNameInput = $("reg-name-input");
+const regPassInput = $("reg-pass-input");
+const showRegister = $("show-register");
+const showLogin = $("show-login");
+const authError = $("auth-error");
+const clearChatBtn = $("clear-chat");
+const streamKillBtn = $("stream-kill");
+const logoutBtn = $("logout-btn");
 
 // ------------------------------------------------------------
 // Estado
 // ------------------------------------------------------------
 let db = null;
+let auth = null;
 let myName = "";
 let myHue = 0;
-const myUid =
-  (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+let myUid = ""; // id da conta (Firebase Auth) — definido no login
+let isAdmin = false;
+let pendingName = "";
+
+// SHA-256 da senha da conta admin (LIMON) — controla o registro do nome reservado.
+// O hash não revela a senha; só quem conhece a senha consegue registrar LIMON.
+const ADMIN_HASH = "365c02757c51e89bb1f1c163679d87a1b8480567522541cb88a602ffacbd6aac";
 
 // Verifica se o usuário já preencheu as credenciais do Firebase
 const isConfigured = Object.values(firebaseConfig).every(
@@ -74,6 +97,22 @@ function hueFromString(str) {
   return hash;
 }
 
+// Nome de usuário -> texto simples (para gerar o e-mail interno da conta)
+function slug(s) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+const emailFor = (name) => `${slug(name)}@chat.limon`;
+
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function addSystemMessage(text) {
   const div = document.createElement("div");
   div.className = "system";
@@ -83,41 +122,160 @@ function addSystemMessage(text) {
 }
 
 // ------------------------------------------------------------
-// Login (nome de usuário)
+// 🔐 Registro e login (Firebase Authentication)
 // ------------------------------------------------------------
-const savedName = localStorage.getItem("chat-global-name");
-if (savedName) enterChat(savedName);
+if (isConfigured) {
+  const app = initializeApp(firebaseConfig);
+  db = getDatabase(app);
+  auth = getAuth(app);
 
-loginForm.addEventListener("submit", (e) => {
+  // Sessão: entra automaticamente se já estiver logado
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      myUid = user.uid;
+
+      // Carrega (ou cria) o perfil do usuário
+      const profRef = ref(db, `users/${user.uid}`);
+      const snap = await get(profRef).catch(() => null);
+      let prof = snap && snap.exists() ? snap.val() : null;
+      if (!prof) {
+        prof = {
+          name: pendingName || "Usuario",
+          hue: hueFromString(pendingName || user.uid),
+          admin: slug(pendingName || "") === "limon",
+          at: serverTimestamp(),
+        };
+        await set(profRef, prof).catch(() => {});
+      }
+      enterChat(prof);
+    } else {
+      myUid = "";
+      chatEl.classList.add("hidden");
+      loginOverlay.classList.remove("hidden");
+    }
+  });
+}
+
+function showAuthError(msg) {
+  authError.textContent = msg;
+  authError.classList.remove("hidden");
+}
+
+function authErrorMessage(err) {
+  const code = err?.code || "";
+  if (code === "auth/email-already-in-use") return "Esse nome já está em uso por outra conta.";
+  if (["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(code))
+    return "Nome ou senha incorretos.";
+  if (code === "auth/too-many-requests") return "Muitas tentativas. Aguarde um pouco e tente de novo.";
+  if (code === "auth/weak-password") return "Senha muito curta (mínimo de 6 caracteres).";
+  if (code === "auth/operation-not-allowed")
+    return "Ative 'Email/Password' no Firebase → Authentication (veja o README!).";
+  if (code === "auth/invalid-email") return "Nome inválido — use letras e números.";
+  return "Erro ao entrar: " + (err?.message || code);
+}
+
+async function login(name, pass) {
+  pendingName = name;
+  await signInWithEmailAndPassword(auth, emailFor(name), pass);
+}
+
+async function register(name, pass) {
+  const s = slug(name);
+  if (!s) {
+    showAuthError("Nome inválido — use letras e números.");
+    return;
+  }
+  // O nome do dono é reservado: só registra com a senha correta
+  if (s === "limon" && (await sha256(pass)) !== ADMIN_HASH) {
+    showAuthError("👑 Esse nome pertence ao dono do site!");
+    return;
+  }
+  pendingName = name;
+  await createUserWithEmailAndPassword(auth, `${s}@chat.limon`, pass);
+}
+
+loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const name = nameInput.value.trim();
-  if (!name) return;
-  localStorage.setItem("chat-global-name", name);
-  enterChat(name);
+  authError.classList.add("hidden");
+  try {
+    await login(nameInput.value.trim(), passInput.value);
+  } catch (err) {
+    showAuthError(authErrorMessage(err));
+  }
 });
 
-function enterChat(name) {
-  myName = name;
-  myHue = hueFromString(name);
+registerForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authError.classList.add("hidden");
+  try {
+    await register(regNameInput.value.trim(), regPassInput.value);
+  } catch (err) {
+    showAuthError(authErrorMessage(err));
+  }
+});
+
+showRegister.addEventListener("click", () => {
+  loginForm.classList.add("hidden");
+  registerForm.classList.remove("hidden");
+  showRegister.classList.add("hidden");
+  showLogin.classList.remove("hidden");
+  authError.classList.add("hidden");
+});
+
+showLogin.addEventListener("click", () => {
+  registerForm.classList.add("hidden");
+  loginForm.classList.remove("hidden");
+  showLogin.classList.add("hidden");
+  showRegister.classList.remove("hidden");
+  authError.classList.add("hidden");
+});
+
+// ---------- Botões do administrador ----------
+clearChatBtn.addEventListener("click", () => {
+  if (!confirm("Apagar TODAS as mensagens do chat global?")) return;
+  remove(ref(db, "messages")).catch(() => {});
+  addSystemMessage("🧹 Chat limpo pelo administrador.");
+});
+
+streamKillBtn.addEventListener("click", () => {
+  if (!confirm("Encerrar a transmissão de tela atual?")) return;
+  remove(ref(db, "stream/state")).catch(() => {});
+  remove(ref(db, "stream/viewers")).catch(() => {});
+  addSystemMessage("🛑 Transmissão encerrada pelo administrador.");
+});
+
+logoutBtn.addEventListener("click", async () => {
+  await signOut(auth).catch(() => {});
+  window.location.reload();
+});
+
+function enterChat(prof) {
+  myName = prof.name || "Usuario";
+  myHue = prof.hue ?? hueFromString(myName);
+  isAdmin = !!prof.admin || slug(myName) === "limon";
 
   loginOverlay.classList.add("hidden");
   chatEl.classList.remove("hidden");
   msgInput.focus();
 
-  if (isConfigured) {
-    const app = initializeApp(firebaseConfig);
-    db = getDatabase(app);
-    listenToMessages();
-    setupPresence();
-    setupStreaming();
-    setupCalls();
-    setupFriends();
-    addSystemMessage(`Bem-vindo, ${myName}! 👋`);
-  } else {
+  if (!isConfigured) {
+    addSystemMessage("⚠️ Firebase não configurado — veja o app.js e o README.");
+    return;
+  }
+
+  if (isAdmin) {
+    clearChatBtn.classList.remove("hidden");
     addSystemMessage(
-      "⚠️ Firebase ainda não configurado. Abra o app.js, cole as credenciais do seu projeto e siga o README."
+      "👑 Modo administrador: você pode apagar mensagens, limpar o chat e encerrar transmissões."
     );
   }
+
+  listenToMessages();
+  setupPresence();
+  setupStreaming();
+  setupCalls();
+  setupFriends();
+  addSystemMessage(`Bem-vindo, ${myName}! 👋`);
 }
 
 // ------------------------------------------------------------
@@ -127,20 +285,26 @@ function listenToMessages() {
   const q = query(ref(db, "messages"), limitToLast(100));
   onChildAdded(
     q,
-    (snap) => renderMessage(snap.val()),
+    (snap) => renderMessage(snap.val(), snap.key),
     () =>
       addSystemMessage(
         "⚠️ Sem permissão para ler o banco. Verifique as regras do Realtime Database (veja o README)."
       )
   );
+  // Mensagens apagadas (pelo adm) somem para todos
+  onChildRemoved(q, (snap) => {
+    const el = messagesEl.querySelector(`[data-key="${snap.key}"]`);
+    if (el) el.remove();
+  });
 }
 
-function renderMessage(data) {
+function renderMessage(data, key) {
   if (!data || !data.text) return;
   const mine = data.uid === myUid;
 
   const wrap = document.createElement("div");
   wrap.className = "msg" + (mine ? " mine" : "");
+  if (key) wrap.dataset.key = key;
 
   const bubble = document.createElement("div");
   bubble.className = "bubble";
@@ -157,7 +321,7 @@ function renderMessage(data) {
   const nm = document.createElement("span");
   nm.className = "name";
   nm.style.color = `hsl(${data.hue ?? 220} 80% 70%)`;
-  nm.textContent = data.name || "Anônimo";
+  nm.textContent = (data.admin ? "👑 " : "") + (data.name || "Anônimo");
 
   const tm = document.createElement("span");
   tm.className = "time";
@@ -173,6 +337,20 @@ function renderMessage(data) {
   txt.textContent = data.text;
 
   bubble.append(head, txt);
+
+  // Admin pode apagar qualquer mensagem
+  if (isAdmin && key) {
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "del-btn";
+    del.title = "Apagar mensagem (adm)";
+    del.textContent = "🗑️";
+    del.addEventListener("click", () => {
+      remove(ref(db, `messages/${key}`)).catch(() => {});
+    });
+    bubble.appendChild(del);
+  }
+
   wrap.appendChild(bubble);
 
   // Só rola para o fim se o usuário já estava perto do fim (ou é msg dele)
@@ -195,6 +373,7 @@ msgForm.addEventListener("submit", (e) => {
     text,
     hue: myHue,
     uid: myUid,
+    admin: isAdmin,
     at: serverTimestamp(),
   });
 
@@ -295,12 +474,14 @@ function setupStreaming() {
         watchBtn.textContent = "🟥 Você está ao vivo — clique para encerrar";
       } else {
         watchBtn.textContent = `🔴 ${liveName} está transmitindo a tela — clique para assistir`;
+        if (isAdmin) streamKillBtn.classList.remove("hidden");
       }
       liveBanner.classList.remove("hidden");
     } else {
       liveName = "";
       liveBanner.classList.add("hidden");
       streamBtn.classList.remove("on");
+      streamKillBtn.classList.add("hidden");
       if (iAmLive) {
         iAmLive = false;
         if (localStream) {
