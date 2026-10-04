@@ -27,10 +27,16 @@
     <header>
       <div class="brand">💬 Chat Global</div>
       <div class="header-right">
+        <button id="stream-btn" type="button" title="Transmitir sua tela">🖥️</button>
         <button id="music-btn" type="button" title="Tocar música">🎵</button>
         <div id="online-count" class="online-pill" title="Usuários conectados agora">🟢 conectando...</div>
       </div>
     </header>
+
+    <!-- Banner de transmissão ao vivo -->
+    <div id="live-banner" class="live-banner hidden">
+      <button id="watch-btn" type="button">🔴 Transmissão ao vivo</button>
+    </div>
 
     <div id="messages"></div>
 
@@ -39,6 +45,12 @@
       <button type="submit" title="Enviar">➤</button>
     </form>
   </main>
+
+  <!-- 🖥️ Player da transmissão ao vivo -->
+  <div id="watch-overlay" class="watch-overlay hidden">
+    <video id="watch-video" autoplay playsinline></video>
+    <button id="watch-close" type="button">✕ Sair da transmissão</button>
+  </div>
 
   <!-- 🎵 Música de fundo (clique no botão do topo para tocar) -->
   <audio id="bg-music" src="musica.mp3" loop preload="none"></audio>

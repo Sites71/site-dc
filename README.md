@@ -12,6 +12,15 @@ O site traz o beat **"Minha Quebrada"** como música de fundo opcional. Como os 
 
 > Créditos: "[FREE] Beat Trap Instrumental – Minha Quebrada" – Prod. ExsBeats.
 
+## 🖥️ Transmissão de tela ao vivo
+
+Qualquer usuário pode transmitir a tela do PC: clique no botão **🖥️** no topo. Os outros veem um **banner vermelho pulsando** e clicam para assistir.
+
+- A tela vai **direto do PC do transmissor para cada espectador** (WebRTC ponto a ponto) — o Firebase só troca os dados de conexão (poucos KB).
+- Uma transmissão por vez; espectadores ilimitados.
+- O navegador só permite captura de tela em **HTTPS** (GitHub Pages ✓). Abrindo o `index.html` direto do disco (file://) a captura fica bloqueada.
+- Redes muito restritivas podem bloquear a conexão direta (exigiria servidor TURN, não incluído).
+
 ## 🚀 Passo a passo
 
 ### 1. Crie um projeto no Firebase
@@ -51,7 +60,8 @@ git push -u origin main
 {
   "rules": {
     "messages": { ".read": true, ".write": true },
-    "presence": { ".read": true, ".write": true }
+    "presence": { ".read": true, ".write": true },
+    "stream": { ".read": true, ".write": true }
   }
 }
 ```

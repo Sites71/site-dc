@@ -10,9 +10,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getDatabase,
+  get,
   ref,
   push,
   set,
+  remove,
   onValue,
   onChildAdded,
   onDisconnect,
@@ -107,6 +109,7 @@ function enterChat(name) {
     db = getDatabase(app);
     listenToMessages();
     setupPresence();
+    setupStreaming();
     addSystemMessage(`Bem-vindo, ${myName}! 👋`);
   } else {
     addSystemMessage(
@@ -245,4 +248,207 @@ musicBtn.addEventListener("click", async () => {
     musicBtn.classList.remove("playing");
     musicBtn.title = "Tocar música";
   }
+});
+
+// ------------------------------------------------------------
+// 🖥️ Transmissão de tela (WebRTC ponto a ponto)
+// O vídeo vai direto do PC do transmissor para o espectador.
+// O Firebase só troca os dados de conexão (oferta/resposta/candidatos).
+// ------------------------------------------------------------
+const streamBtn = $("stream-btn");
+const liveBanner = $("live-banner");
+const watchBtn = $("watch-btn");
+const watchOverlay = $("watch-overlay");
+const watchVideo = $("watch-video");
+const watchClose = $("watch-close");
+
+const ICE_SERVERS = {
+  iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
+};
+
+let localStream = null;   // captura de tela do transmissor
+let iAmLive = false;      // estou transmitindo?
+let viewerPCs = new Map(); // espectador -> RTCPeerConnection
+let viewersUnsub = null;
+let watchPC = null;       // minha conexão quando assisto
+let watchingId = null;
+let watchUnsubs = [];
+let liveName = "";
+
+const stateRef = () => ref(db, "stream/state");
+const myViewerRef = () => ref(db, `stream/viewers/${myUid}`);
+
+function setupStreaming() {
+  onValue(stateRef(), (snap) => {
+    const st = snap.val();
+    if (st && st.active) {
+      liveName = st.name || "Alguém";
+      if (st.uid === myUid) {
+        iAmLive = true;
+        streamBtn.classList.add("on");
+        watchBtn.textContent = "🟥 Você está ao vivo — clique para encerrar";
+      } else {
+        watchBtn.textContent = `🔴 ${liveName} está transmitindo a tela — clique para assistir`;
+      }
+      liveBanner.classList.remove("hidden");
+    } else {
+      liveName = "";
+      liveBanner.classList.add("hidden");
+      streamBtn.classList.remove("on");
+      if (iAmLive) {
+        iAmLive = false;
+        if (localStream) {
+          localStream.getTracks().forEach((t) => t.stop());
+          localStream = null;
+        }
+        viewerPCs.forEach((pc) => pc.close());
+        viewerPCs.clear();
+        if (viewersUnsub) { viewersUnsub(); viewersUnsub = null; }
+        remove(ref(db, "stream/viewers")).catch(() => {});
+        addSystemMessage("🛑 Sua transmissão foi encerrada.");
+      }
+      if (watchingId) {
+        stopWatching();
+        addSystemMessage("🛑 A transmissão que você assistia foi encerrada.");
+      }
+    }
+  });
+}
+
+async function startBroadcast() {
+  if (!db) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    addSystemMessage("⚠️ Este navegador não suporta transmissão de tela. Use Chrome ou Edge no PC.");
+    return;
+  }
+  const snap = await get(stateRef());
+  if (snap.exists()) {
+    addSystemMessage("⚠️ Já existe uma transmissão ao vivo — ela precisa encerrar antes de outra começar.");
+    return;
+  }
+  try {
+    localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+  } catch {
+    return; // usuário cancelou a janela de escolha
+  }
+  await set(stateRef(), { active: true, uid: myUid, name: myName, hue: myHue, at: serverTimestamp() });
+  onDisconnect(stateRef()).remove();
+  localStream.getVideoTracks()[0].addEventListener("ended", stopBroadcast);
+  viewersUnsub = onChildAdded(ref(db, "stream/viewers"), handleNewViewer);
+  addSystemMessage("🔴 Você começou a transmitir! Os outros verão um banner vermelho para assistir.");
+}
+
+function stopBroadcast() {
+  if (db) remove(stateRef()).catch(() => {});
+  // a limpeza completa acontece no listener do estado (onValue)
+}
+
+async function handleNewViewer(snap) {
+  if (!iAmLive || !localStream) return;
+  const viewerId = snap.key;
+  const data = snap.val();
+  if (!data || !data.offer || viewerId === myUid) return;
+
+  try {
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    viewerPCs.set(viewerId, pc);
+    localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) push(ref(db, `stream/viewers/${viewerId}/candsB`), e.candidate.toJSON());
+    };
+
+    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await set(ref(db, `stream/viewers/${viewerId}/answer`), { type: answer.type, sdp: answer.sdp });
+
+    onChildAdded(ref(db, `stream/viewers/${viewerId}/candsV`), (c) => {
+      pc.addIceCandidate(new RTCIceCandidate(c.val())).catch(() => {});
+    });
+  } catch (err) {
+    console.warn("Falha ao aceitar espectador:", err);
+  }
+}
+
+async function startWatching() {
+  if (!db || watchPC) return;
+  const snap = await get(stateRef());
+  const st = snap.val();
+  if (!st || !st.active || st.uid === myUid) return;
+
+  watchingId = st.uid;
+  watchPC = new RTCPeerConnection(ICE_SERVERS);
+  watchPC.addTransceiver("video", { direction: "recvonly" });
+  watchPC.addTransceiver("audio", { direction: "recvonly" });
+
+  watchPC.ontrack = (e) => {
+    watchVideo.srcObject = e.streams[0];
+    watchOverlay.classList.remove("hidden");
+    watchVideo.play().catch(() => {});
+    watchBtn.textContent = "⏹️ Sair da transmissão";
+  };
+
+  watchPC.onicecandidate = (e) => {
+    if (e.candidate) push(ref(db, `stream/viewers/${myUid}/candsV`), e.candidate.toJSON());
+  };
+
+  onDisconnect(myViewerRef()).remove();
+
+  const offer = await watchPC.createOffer();
+  await watchPC.setLocalDescription(offer);
+  await set(myViewerRef(), { name: myName, offer: { type: offer.type, sdp: offer.sdp } });
+
+  let remoteReady = false;
+  let candsBuf = [];
+
+  watchUnsubs.push(
+    onValue(ref(db, `stream/viewers/${myUid}/answer`), async (s) => {
+      if (!s.exists() || !watchPC || watchPC.currentRemoteDescription) return;
+      try {
+        await watchPC.setRemoteDescription(new RTCSessionDescription(s.val()));
+        remoteReady = true;
+        candsBuf.forEach((cand) => watchPC && watchPC.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {}));
+        candsBuf = [];
+      } catch (err) { console.warn(err); }
+    })
+  );
+
+  watchUnsubs.push(
+    onChildAdded(ref(db, `stream/viewers/${myUid}/candsB`), (c) => {
+      if (!watchPC) return;
+      if (remoteReady) watchPC.addIceCandidate(new RTCIceCandidate(c.val())).catch(() => {});
+      else candsBuf.push(c.val());
+    })
+  );
+}
+
+function stopWatching() {
+  watchUnsubs.forEach((u) => u());
+  watchUnsubs = [];
+  if (watchPC) { watchPC.close(); watchPC = null; }
+  watchVideo.srcObject = null;
+  watchOverlay.classList.add("hidden");
+  if (db && watchingId) remove(myViewerRef()).catch(() => {});
+  watchingId = null;
+  if (liveName) {
+    watchBtn.textContent = `🔴 ${liveName} está transmitindo a tela — clique para assistir`;
+  }
+}
+
+streamBtn.addEventListener("click", () => {
+  if (!db) { addSystemMessage("⚠️ Firebase não configurado — transmissão indisponível."); return; }
+  if (iAmLive) stopBroadcast();
+  else startBroadcast();
+});
+
+watchBtn.addEventListener("click", () => {
+  if (!db) return;
+  if (iAmLive) { stopBroadcast(); return; }
+  if (watchingId) { stopWatching(); return; }
+  startWatching();
+});
+
+watchClose.addEventListener("click", () => {
+  if (watchingId) stopWatching();
 });
