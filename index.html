@@ -27,6 +27,7 @@
     <header>
       <div class="brand">💬 Chat Global</div>
       <div class="header-right">
+        <button id="friends-btn" type="button" title="Amigos">👥<span id="friends-badge" class="friends-badge hidden"></span></button>
         <button id="call-btn" type="button" title="Chamada de voz em grupo">📞</button>
         <button id="stream-btn" type="button" title="Transmitir sua tela">🖥️</button>
         <button id="music-btn" type="button" title="Tocar música">🎵</button>
@@ -91,6 +92,45 @@
       <button id="call-invite-more" type="button" class="ctl-btn" title="Convidar mais">➕</button>
     </div>
     <div id="call-audio-container" class="hidden"></div>
+  </div>
+
+  <!-- 👥 Painel de amigos -->
+  <div id="friends-panel" class="friends-panel hidden">
+    <div class="friends-head">
+      <h3>👥 Amigos</h3>
+      <button id="friends-close" type="button" class="icon-btn">✕</button>
+    </div>
+
+    <div class="friends-section">
+      <h4>Adicionar amigos</h4>
+      <div id="add-friend-list"></div>
+    </div>
+
+    <div class="friends-section">
+      <h4 id="requests-title">Solicitações</h4>
+      <div id="requests-list"></div>
+    </div>
+
+    <div class="friends-section">
+      <h4 id="friends-title">Meus amigos</h4>
+      <div id="friends-list"></div>
+    </div>
+  </div>
+
+  <!-- 💬 Conversa privada (DM) -->
+  <div id="dm-overlay" class="dm-overlay hidden">
+    <div class="dm-head">
+      <button id="dm-back" type="button" class="icon-btn" title="Voltar">←</button>
+      <span id="dm-friend-name">Amigo</span>
+      <span id="dm-friend-status"></span>
+      <button id="dm-remove" type="button" class="icon-btn" title="Remover amizade">🗑️</button>
+      <button id="dm-close" type="button" class="icon-btn" title="Fechar">✕</button>
+    </div>
+    <div id="dm-messages" class="dm-messages"></div>
+    <form id="dm-form" class="dm-form">
+      <input id="dm-input" type="text" placeholder="Mensagem privada..." maxlength="500" autocomplete="off" required />
+      <button type="submit">➤</button>
+    </form>
   </div>
 
   <!-- 🎵 Música de fundo (clique no botão do topo para tocar) -->

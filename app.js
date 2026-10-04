@@ -111,6 +111,7 @@ function enterChat(name) {
     setupPresence();
     setupStreaming();
     setupCalls();
+    setupFriends();
     addSystemMessage(`Bem-vindo, ${myName}! 👋`);
   } else {
     addSystemMessage(
@@ -217,7 +218,7 @@ function setupPresence() {
     }
   });
 
-  // Contador de online + lista de usuários (usada nas chamadas)
+  // Contador de online + lista de usuários (usada nas chamadas e amigos)
   onValue(
     ref(db, "presence"),
     (snap) => {
@@ -225,6 +226,8 @@ function setupPresence() {
       onlineUsers = new Map(Object.entries(val));
       const n = onlineUsers.size;
       onlineEl.textContent = `🟢 ${n} online${n === 1 ? "" : "s"}`;
+      renderFriendsPanel();
+      updateDmStatus();
     },
     () => (onlineEl.textContent = "🟢 —")
   );
@@ -924,3 +927,379 @@ callMute.addEventListener("click", () => {
 });
 
 callInviteMore.addEventListener("click", () => openCallPanel("invite-more"));
+
+// ------------------------------------------------------------
+// 👥 Amigos + conversas privadas (DM)
+// ------------------------------------------------------------
+const friendsBtn = $("friends-btn");
+const friendsBadge = $("friends-badge");
+const friendsPanel = $("friends-panel");
+const friendsClose = $("friends-close");
+const addFriendList = $("add-friend-list");
+const requestsList = $("requests-list");
+const friendsList = $("friends-list");
+const requestsTitle = $("requests-title");
+const friendsTitle = $("friends-title");
+const dmOverlay = $("dm-overlay");
+const dmFriendName = $("dm-friend-name");
+const dmFriendStatus = $("dm-friend-status");
+const dmRemove = $("dm-remove");
+const dmClose = $("dm-close");
+const dmBack = $("dm-back");
+const dmMessagesEl = $("dm-messages");
+const dmForm = $("dm-form");
+const dmInput = $("dm-input");
+
+let friendsMap = new Map();     // uid -> { name, hue, since }
+let pendingRequests = new Map(); // uid -> { name, hue, at }
+let sentRequests = new Set();   // pedidos que EU enviei (nesta sessão)
+let dmRooms = new Map();       // friendUid -> { unsubs, unread, msgs }
+let openDmUid = null;
+let prevFriendsCount = 0;
+let prevRequestsCount = 0;
+
+// Chave da sala privada entre dois usuários (sempre igual pros dois lados)
+const roomKeyFor = (a, b) => [a, b].sort().join("__");
+
+function setupFriends() {
+  onValue(ref(db, `friends/${myUid}`), (snap) => {
+    const val = snap.val() || {};
+    const before = new Set(friendsMap.keys());
+    friendsMap = new Map(Object.entries(val));
+    // Avisa quando uma amizade nova aparece (aceitaram seu pedido)
+    for (const [uid, info] of friendsMap) {
+      if (!before.has(uid) && prevFriendsCount > 0) {
+        addSystemMessage(`🎉 Você e ${info.name || "alguém"} agora são amigos!`);
+      }
+    }
+    prevFriendsCount = friendsMap.size;
+    reconcileDmListeners();
+    renderFriendsPanel();
+    updateFriendsBadge();
+  });
+
+  onValue(ref(db, `friendRequests/${myUid}`), (snap) => {
+    const val = snap.val() || {};
+    const before = new Set(pendingRequests.keys());
+    pendingRequests = new Map(Object.entries(val));
+    for (const [uid, info] of pendingRequests) {
+      if (!before.has(uid) && prevRequestsCount > 0) {
+        addSystemMessage(`👥 ${info.name || "Alguém"} quer ser seu amigo! Abra o painel 👥 para aceitar.`);
+      }
+    }
+    prevRequestsCount = pendingRequests.size;
+    renderFriendsPanel();
+    updateFriendsBadge();
+  });
+}
+
+// ---------- Ações ----------
+async function sendFriendRequest(targetUid) {
+  if (friendsMap.has(targetUid)) return;
+  // Se a pessoa já me chamou, aceita direto
+  if (pendingRequests.has(targetUid)) {
+    acceptRequest(targetUid);
+    return;
+  }
+  const info = onlineUsers.get(targetUid);
+  sentRequests.add(targetUid);
+  await set(ref(db, `friendRequests/${targetUid}/${myUid}`), {
+    name: myName,
+    hue: myHue,
+    at: serverTimestamp(),
+  }).catch(() => {});
+  addSystemMessage(`📨 Pedido de amizade enviado para ${info?.name || "alguém"}.`);
+  renderFriendsPanel();
+}
+
+async function acceptRequest(fromUid) {
+  const info = pendingRequests.get(fromUid);
+  if (!info) return;
+  await set(ref(db, `friends/${myUid}/${fromUid}`), {
+    name: info.name || "Alguém",
+    hue: info.hue ?? 220,
+    since: serverTimestamp(),
+  }).catch(() => {});
+  await set(ref(db, `friends/${fromUid}/${myUid}`), {
+    name: myName,
+    hue: myHue,
+    since: serverTimestamp(),
+  }).catch(() => {});
+  await remove(ref(db, `friendRequests/${myUid}/${fromUid}`)).catch(() => {});
+  sentRequests.delete(fromUid);
+}
+
+async function declineRequest(fromUid) {
+  await remove(ref(db, `friendRequests/${myUid}/${fromUid}`)).catch(() => {});
+  addSystemMessage("Pedido de amizade recusado.");
+}
+
+async function removeFriend(uid) {
+  if (!friendsMap.has(uid)) return;
+  if (!confirm("Remover este amigo?")) return;
+  const room = dmRooms.get(uid);
+  if (room) {
+    room.unsubs.forEach((u) => u());
+    dmRooms.delete(uid);
+  }
+  if (openDmUid === uid) closeDm();
+  await remove(ref(db, `friends/${myUid}/${uid}`)).catch(() => {});
+  await remove(ref(db, `friends/${uid}/${myUid}`)).catch(() => {});
+  addSystemMessage("💔 Amizade removida.");
+  renderFriendsPanel();
+  updateFriendsBadge();
+}
+
+// ---------- Listeners das salas privadas ----------
+function reconcileDmListeners() {
+  // remove salas de quem deixou de ser amigo
+  for (const [uid, room] of dmRooms) {
+    if (!friendsMap.has(uid)) {
+      room.unsubs.forEach((u) => u());
+      dmRooms.delete(uid);
+    }
+  }
+  // cria salas dos amigos
+  for (const uid of friendsMap.keys()) {
+    if (dmRooms.has(uid)) continue;
+    const key = roomKeyFor(myUid, uid);
+    const room = { unsubs: [], unread: 0, msgs: [] };
+    dmRooms.set(uid, room);
+    room.unsubs.push(
+      onChildAdded(
+        query(ref(db, `dm/${key}/messages`), limitToLast(100)),
+        (snap) => {
+          const data = snap.val();
+          if (!data) return;
+          room.msgs.push(data);
+          if (openDmUid === uid) {
+            renderDmMessages(uid);
+          } else if (data.uid !== myUid) {
+            const first = room.unread === 0;
+            room.unread++;
+            updateFriendsBadge();
+            if (!friendsPanel.classList.contains("hidden")) renderFriendsPanel();
+            if (first) {
+              addSystemMessage(`💬 ${data.name || "Alguém"} te mandou uma mensagem privada (abra 👥).`);
+            }
+          }
+        },
+        () => {}
+      )
+    );
+  }
+}
+
+// ---------- Conversa privada ----------
+function openDm(uid) {
+  const info = friendsMap.get(uid);
+  if (!info) return;
+  openDmUid = uid;
+  const room = dmRooms.get(uid);
+  if (room) room.unread = 0;
+  const live = onlineUsers.get(uid);
+  dmFriendName.textContent = live?.name || info.name || "Amigo";
+  updateDmStatus();
+  renderDmMessages(uid);
+  updateFriendsBadge();
+  friendsPanel.classList.add("hidden");
+  dmOverlay.classList.remove("hidden");
+  dmInput.focus();
+}
+
+function closeDm() {
+  openDmUid = null;
+  dmOverlay.classList.add("hidden");
+}
+
+function updateDmStatus() {
+  if (!openDmUid) return;
+  dmFriendStatus.textContent = onlineUsers.has(openDmUid) ? "🟢 online" : "⚫ offline";
+}
+
+function renderDmMessages(uid) {
+  const room = dmRooms.get(uid);
+  if (!room) return;
+  dmMessagesEl.innerHTML = "";
+  for (const m of room.msgs) appendDmBubble(m);
+  dmMessagesEl.scrollTop = dmMessagesEl.scrollHeight;
+}
+
+function appendDmBubble(m) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg" + (m.uid === myUid ? " mine" : "");
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+
+  const head = document.createElement("div");
+  head.className = "msg-head";
+  const nm = document.createElement("span");
+  nm.className = "name";
+  nm.style.color = `hsl(${m.hue ?? 220} 80% 70%)`;
+  nm.textContent = m.name || "Anônimo";
+  const tm = document.createElement("span");
+  tm.className = "time";
+  tm.textContent = m.at
+    ? new Date(m.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    : "";
+  head.append(nm, tm);
+
+  const txt = document.createElement("div");
+  txt.className = "text";
+  txt.textContent = m.text || "";
+
+  bubble.append(head, txt);
+  wrap.appendChild(bubble);
+  dmMessagesEl.appendChild(wrap);
+}
+
+// ---------- Painel de amigos ----------
+function renderFriendsPanel() {
+  // Adicionar amigos (online, não amigos, sem pedido pendente)
+  addFriendList.innerHTML = "";
+  let anyAdd = false;
+  for (const [uid, info] of onlineUsers) {
+    if (uid === myUid || friendsMap.has(uid) || pendingRequests.has(uid)) continue;
+    if (sentRequests.has(uid)) continue;
+    anyAdd = true;
+    addFriendList.appendChild(
+      makeUserRow(uid, info, [mkBtn("➕", "Adicionar amigo", () => sendFriendRequest(uid))])
+    );
+  }
+  if (!anyAdd) emptyNote(addFriendList, "Ninguém novo online agora 😴");
+
+  // Solicitações recebidas
+  requestsTitle.textContent = `Solicitações (${pendingRequests.size})`;
+  requestsList.innerHTML = "";
+  if (!pendingRequests.size) {
+    emptyNote(requestsList, "Nenhuma solicitação pendente.");
+  } else {
+    for (const [uid, info] of pendingRequests) {
+      requestsList.appendChild(
+        makeUserRow(uid, info, [
+          mkBtn("✅", "Aceitar", () => acceptRequest(uid)),
+          mkBtn("✖", "Recusar", () => declineRequest(uid)),
+        ])
+      );
+    }
+  }
+
+  // Lista de amigos
+  friendsTitle.textContent = `Meus amigos (${friendsMap.size})`;
+  friendsList.innerHTML = "";
+  if (!friendsMap.size) {
+    emptyNote(friendsList, "Você ainda não tem amigos. Adicione alguém acima! 💚");
+  } else {
+    const sorted = [...friendsMap.entries()].sort((a, b) => {
+      const onA = onlineUsers.has(a[0]) ? 1 : 0;
+      const onB = onlineUsers.has(b[0]) ? 1 : 0;
+      if (onA !== onB) return onB - onA;
+      return (dmRooms.get(b[0])?.unread || 0) - (dmRooms.get(a[0])?.unread || 0);
+    });
+    for (const [uid, info] of sorted) {
+      const row = makeUserRow(uid, info, []);
+      const dot = document.createElement("span");
+      dot.textContent = onlineUsers.has(uid) ? "🟢" : "⚫";
+      dot.title = onlineUsers.has(uid) ? "Online" : "Offline";
+      row.appendChild(dot);
+      const room = dmRooms.get(uid);
+      if (room && room.unread > 0) {
+        const b = document.createElement("span");
+        b.className = "unread-badge";
+        b.textContent = room.unread > 99 ? "99+" : room.unread;
+        row.appendChild(b);
+      }
+      row.addEventListener("click", () => openDm(uid));
+      friendsList.appendChild(row);
+    }
+  }
+}
+
+function makeUserRow(uid, info, buttons) {
+  const row = document.createElement("div");
+  row.className = "friend-row";
+  const av = document.createElement("span");
+  av.className = "avatar";
+  av.style.background = `hsl(${info.hue ?? 220} 70% 45%)`;
+  av.textContent = (info.name || "?").slice(0, 1).toUpperCase();
+  const nm = document.createElement("span");
+  nm.className = "friend-name";
+  nm.textContent = info.name || "Anônimo";
+  row.append(av, nm);
+  const spacer = document.createElement("span");
+  spacer.style.flex = "1";
+  row.appendChild(spacer);
+  for (const b of buttons) row.appendChild(b);
+  return row;
+}
+
+function mkBtn(label, title, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "btn-mini";
+  b.title = title;
+  b.textContent = label;
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onClick();
+  });
+  return b;
+}
+
+function emptyNote(container, text) {
+  const p = document.createElement("p");
+  p.className = "call-empty";
+  p.textContent = text;
+  container.appendChild(p);
+}
+
+function updateFriendsBadge() {
+  const unread = [...dmRooms.values()].reduce((s, r) => s + (r.unread || 0), 0);
+  const n = unread + pendingRequests.size;
+  if (n > 0) {
+    friendsBadge.textContent = n > 99 ? "99+" : String(n);
+    friendsBadge.classList.remove("hidden");
+  } else {
+    friendsBadge.classList.add("hidden");
+  }
+}
+
+// ---------- Botões ----------
+friendsBtn.addEventListener("click", () => {
+  if (!db) {
+    addSystemMessage("⚠️ Firebase não configurado.");
+    return;
+  }
+  renderFriendsPanel();
+  friendsPanel.classList.toggle("hidden");
+});
+
+friendsClose.addEventListener("click", () => friendsPanel.classList.add("hidden"));
+
+dmClose.addEventListener("click", closeDm);
+dmBack.addEventListener("click", () => {
+  closeDm();
+  friendsPanel.classList.remove("hidden");
+});
+
+dmRemove.addEventListener("click", () => {
+  if (openDmUid) removeFriend(openDmUid);
+});
+
+dmForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = dmInput.value.trim().slice(0, 500);
+  if (!text || !openDmUid) return;
+  const key = roomKeyFor(myUid, openDmUid);
+  await push(ref(db, `dm/${key}/messages`), {
+    uid: myUid,
+    name: myName,
+    hue: myHue,
+    text,
+    at: serverTimestamp(),
+  });
+  set(ref(db, `dm/${key}/meta/lastAt`), serverTimestamp()).catch(() => {});
+  dmInput.value = "";
+  dmInput.focus();
+});

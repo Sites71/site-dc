@@ -12,6 +12,14 @@ O site traz o beat **"Minha Quebrada"** como música de fundo opcional. Como os 
 
 > Créditos: "[FREE] Beat Trap Instrumental – Minha Quebrada" – Prod. ExsBeats.
 
+## 👥 Amigos + conversas privadas (DM)
+
+- Botão **👥** abre o painel de amigos: **adicionar** quem estiver online (➕), **aceitar/recusar solicitações** (✅/✖) e ver seus amigos com status 🟢/⚫.
+- Quando alguém aceita, vocês viram amigos automaticamente nos dois lados.
+- Clique num amigo → **conversa privada** (só vocês dois leem — cada par tem sua própria sala no banco).
+- O botão 👥 mostra um **contador vermelho** com solicitações e mensagens não lidas.
+- 🗑️ dentro da conversa remove a amizade (as mensagens antigas deixam de ficar acessíveis pra quem foi removido).
+
 ## 📞 Chamadas de voz em grupo
 
 Clique em **📞** no topo, marque quem está online e clique em **Iniciar chamada**. Os convidados recebem um "toque" na tela com as opções **Atender** ou **Recusar** — só quem é convidado vê a chamada (privada).
@@ -73,7 +81,10 @@ git push -u origin main
     "presence": { ".read": true, ".write": true },
     "stream": { ".read": true, ".write": true },
     "calls": { ".read": true, ".write": true },
-    "invites": { ".read": true, ".write": true }
+    "invites": { ".read": true, ".write": true },
+    "friends": { ".read": true, ".write": true },
+    "friendRequests": { ".read": true, ".write": true },
+    "dm": { ".read": true, ".write": true }
   }
 }
 ```
