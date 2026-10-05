@@ -11,6 +11,9 @@
 </head>
 <body>
 
+  <!-- 🚨 Diagnóstico: qualquer erro aparece aqui em vermelho -->
+  <div id="diag-banner" class="diag-banner hidden"></div>
+
   <!-- ===== TELA DE LOGIN / REGISTRO ===== -->
   <div id="login-overlay">
     <div class="login-card">
@@ -191,6 +194,28 @@
     </div>
   </div>
 
+  <script>
+    // Diagnóstico: se algo falhar, aparece na tela em vez de ficar invisível
+    window.__chatOk = false;
+    window.addEventListener("error", function (e) {
+      showDiag("⚠️ Erro no app: " + (e.message || "desconhecido"));
+    });
+    window.addEventListener("unhandledrejection", function (e) {
+      var r = e.reason;
+      showDiag("⚠️ " + ((r && (r.code || r.message)) || "erro desconhecido"));
+    });
+    function showDiag(text) {
+      var el = document.getElementById("diag-banner");
+      if (!el) return;
+      el.textContent = text;
+      el.classList.remove("hidden");
+    }
+    setTimeout(function () {
+      if (!window.__chatOk) {
+        showDiag("⚠️ O app não carregou! Se você abriu o arquivo direto (2 cliques), use o terminal: python -m http.server 8080 e abra http://localhost:8080 — ou veja o erro no Console (F12).");
+      }
+    }, 3000);
+  </script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

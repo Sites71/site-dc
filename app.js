@@ -1720,3 +1720,6 @@ dmForm.addEventListener("submit", async (e) => {
   dmInput.value = "";
   dmInput.focus();
 });
+
+// Sinaliza que o app carregou (usado pelo diagnóstico da página)
+window.__chatOk = true;
