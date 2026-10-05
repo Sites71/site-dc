@@ -55,17 +55,60 @@
       </div>
     </header>
 
-    <!-- Banner de transmissão ao vivo -->
-    <div id="live-banner" class="live-banner hidden">
-      <button id="watch-btn" type="button">🔴 Transmissão ao vivo</button>
+    <div class="layout">
+      <!-- ===== Barra lateral (estilo Discord) ===== -->
+      <aside id="sidebar">
+        <div class="sidebar-scroll">
+          <div class="sidebar-item" id="nav-global" title="Chat global">🌐 <span class="side-label">Chat Global</span></div>
+
+          <div class="side-head">
+            <span class="side-label">AMIGOS</span>
+            <button id="open-add-friend" type="button" class="mini-plus" title="Adicionar amigo">➕</button>
+          </div>
+          <div id="sidebar-requests"></div>
+          <div id="sidebar-friends"></div>
+        </div>
+
+        <div id="my-profile" class="my-profile" title="Editar perfil e foto">
+          <span id="my-avatar"></span>
+          <span id="my-name"></span>
+          <span id="my-crown" class="hidden">👑</span>
+        </div>
+      </aside>
+
+      <!-- ===== Painel direito: canal ativo ===== -->
+      <section id="main-panel">
+        <!-- Canal: Chat Global -->
+        <div id="channel-global">
+          <div class="channel-head">
+            <span class="channel-title">🌐 Chat Global</span>
+            <span class="channel-sub">público — todo mundo vê</span>
+          </div>
+          <div id="live-banner" class="live-banner hidden">
+            <button id="watch-btn" type="button">🔴 Transmissão ao vivo</button>
+          </div>
+          <div id="messages"></div>
+          <form id="message-form">
+            <input id="message-input" type="text" placeholder="Digite sua mensagem..." maxlength="500" autocomplete="off" required />
+            <button type="submit" title="Enviar">➤</button>
+          </form>
+        </div>
+
+        <!-- Canal: conversa privada -->
+        <div id="channel-dm" class="hidden">
+          <div class="channel-head">
+            <span class="channel-title" id="dm-title">@ Amigo</span>
+            <span class="channel-sub" id="dm-status">⚫ offline</span>
+            <button id="dm-remove" type="button" class="btn-leave" title="Remover amizade">🗑️</button>
+          </div>
+          <div id="dm-messages" class="dm-messages"></div>
+          <form id="dm-form" class="dm-form">
+            <input id="dm-input" type="text" placeholder="Mensagem privada..." maxlength="500" autocomplete="off" required />
+            <button type="submit">➤</button>
+          </form>
+        </div>
+      </section>
     </div>
-
-    <div id="messages"></div>
-
-    <form id="message-form">
-      <input id="message-input" type="text" placeholder="Digite sua mensagem..." maxlength="500" autocomplete="off" required />
-      <button type="submit" title="Enviar">➤</button>
-    </form>
   </main>
 
   <!-- 🖥️ Player da transmissão ao vivo -->
@@ -114,43 +157,31 @@
     <div id="call-audio-container" class="hidden"></div>
   </div>
 
-  <!-- 👥 Painel de amigos -->
-  <div id="friends-panel" class="friends-panel hidden">
-    <div class="friends-head">
-      <h3>👥 Amigos</h3>
-      <button id="friends-close" type="button" class="icon-btn">✕</button>
-    </div>
-
-    <div class="friends-section">
-      <h4>Adicionar amigos</h4>
+  <!-- ➕ Adicionar amigo -->
+  <div id="add-friend-panel" class="call-panel hidden">
+    <div class="call-box">
+      <div class="call-box-head">
+        <h3>➕ Adicionar amigo</h3>
+        <button id="add-friend-close" type="button" class="icon-btn">✕</button>
+      </div>
+      <p class="muted-note">Pessoas online agora (que ainda não são suas amigas):</p>
       <div id="add-friend-list"></div>
-    </div>
-
-    <div class="friends-section">
-      <h4 id="requests-title">Solicitações</h4>
-      <div id="requests-list"></div>
-    </div>
-
-    <div class="friends-section">
-      <h4 id="friends-title">Meus amigos</h4>
-      <div id="friends-list"></div>
     </div>
   </div>
 
-  <!-- 💬 Conversa privada (DM) -->
-  <div id="dm-overlay" class="dm-overlay hidden">
-    <div class="dm-head">
-      <button id="dm-back" type="button" class="icon-btn" title="Voltar">←</button>
-      <span id="dm-friend-name">Amigo</span>
-      <span id="dm-friend-status"></span>
-      <button id="dm-remove" type="button" class="icon-btn" title="Remover amizade">🗑️</button>
-      <button id="dm-close" type="button" class="icon-btn" title="Fechar">✕</button>
+  <!-- 📷 Perfil / foto -->
+  <div id="profile-panel" class="call-panel hidden">
+    <div class="call-box">
+      <div class="call-box-head">
+        <h3>Seu perfil</h3>
+        <button id="profile-close" type="button" class="icon-btn">✕</button>
+      </div>
+      <div id="profile-avatar-big" class="profile-avatar-big"></div>
+      <input id="photo-input" type="file" accept="image/*" class="hidden" />
+      <button id="pick-photo" type="button" class="btn-primary">📷 Escolher foto de perfil</button>
+      <button id="remove-photo" type="button" class="btn-ghost">Remover foto</button>
+      <p class="muted-note">A imagem é cortada em círculo e reduzida para 96×96 automaticamente.</p>
     </div>
-    <div id="dm-messages" class="dm-messages"></div>
-    <form id="dm-form" class="dm-form">
-      <input id="dm-input" type="text" placeholder="Mensagem privada..." maxlength="500" autocomplete="off" required />
-      <button type="submit">➤</button>
-    </form>
   </div>
 
   <!-- 🎵 Música de fundo (clique no botão do topo para tocar) -->

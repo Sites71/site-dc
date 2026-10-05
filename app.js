@@ -78,6 +78,8 @@ let myHue = 0;
 let myUid = ""; // id da conta (Firebase Auth) — definido no login
 let isAdmin = false;
 let pendingName = "";
+let myPhoto = null;           // foto de perfil (dataURL 96×96)
+let activeChannel = "global"; // "global" | uid do amigo aberto no painel direito
 
 // SHA-256 da senha da conta admin (LIMON) — controla o registro do nome reservado.
 // O hash não revela a senha; só quem conhece a senha consegue registrar LIMON.
@@ -111,6 +113,22 @@ const emailFor = (name) => `${slug(name)}@chat.limon`;
 async function sha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Cria o avatar: foto de perfil (se tiver) ou inicial colorida
+function makeAvatarEl(info, extraClass) {
+  if (info && info.photo) {
+    const img = document.createElement("img");
+    img.className = "avatar" + (extraClass ? " " + extraClass : "");
+    img.src = info.photo;
+    img.alt = info.name || "?";
+    return img;
+  }
+  const el = document.createElement("span");
+  el.className = "avatar" + (extraClass ? " " + extraClass : "");
+  el.style.background = `hsl(${info?.hue ?? 220} 70% 45%)`;
+  el.textContent = (info?.name || "?").slice(0, 1).toUpperCase();
+  return el;
 }
 
 function addSystemMessage(text) {
@@ -252,7 +270,10 @@ logoutBtn.addEventListener("click", async () => {
 function enterChat(prof) {
   myName = prof.name || "Usuario";
   myHue = prof.hue ?? hueFromString(myName);
+  myPhoto = prof.photo || null;
   isAdmin = !!prof.admin || slug(myName) === "limon";
+  activeChannel = "global";
+  updateMyProfileRow();
 
   loginOverlay.classList.add("hidden");
   chatEl.classList.remove("hidden");
@@ -313,10 +334,8 @@ function renderMessage(data, key) {
   const head = document.createElement("div");
   head.className = "msg-head";
 
-  const avatar = document.createElement("span");
-  avatar.className = "avatar";
-  avatar.style.background = `hsl(${data.hue ?? 220} 70% 45%)`;
-  avatar.textContent = (data.name || "?").slice(0, 1).toUpperCase();
+  const pinfo = data.uid ? onlineUsers.get(data.uid) : null;
+  const avatar = makeAvatarEl(pinfo || data);
 
   const nm = document.createElement("span");
   nm.className = "name";
@@ -390,19 +409,35 @@ function setupPresence() {
   // Ao desconectar, remove automaticamente
   onDisconnect(myPresence).remove();
 
+  const markPresence = () =>
+    set(myPresence, {
+      name: myName,
+      hue: myHue,
+      photo: myPhoto || null,
+      at: serverTimestamp(),
+    }).catch(() => {});
+
   // Marca presença e re-marca sempre que a conexão voltar
   onValue(ref(db, ".info/connected"), (snap) => {
-    if (snap.val() === true) {
-      set(myPresence, { name: myName, hue: myHue, at: serverTimestamp() });
-    }
+    if (snap.val() === true) markPresence();
   });
+
+  // Heartbeat: renova a cada 60s para manter a lista de online precisa
+  setInterval(markPresence, 60000);
 
   // Contador de online + lista de usuários (usada nas chamadas e amigos)
   onValue(
     ref(db, "presence"),
     (snap) => {
       const val = snap.val() || {};
-      onlineUsers = new Map(Object.entries(val));
+      const now = Date.now();
+      onlineUsers = new Map();
+      for (const [uid, info] of Object.entries(val)) {
+        if (!info || typeof info !== "object") continue;
+        // Ignora entradas "fantasmas" (sem renovação há mais de 3 minutos)
+        const age = info.at ? now - info.at : Infinity;
+        if (age < 3 * 60 * 1000 || uid === myUid) onlineUsers.set(uid, info);
+      }
       const n = onlineUsers.size;
       onlineEl.textContent = `🟢 ${n} online${n === 1 ? "" : "s"}`;
       renderFriendsPanel();
@@ -515,8 +550,15 @@ async function startBroadcast() {
   }
   try {
     localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-  } catch {
-    return; // usuário cancelou a janela de escolha
+  } catch (err) {
+    console.warn(err);
+    if (err && (err.name === "NotAllowedError" || err.name === "AbortError")) return; // usuário cancelou
+    addSystemMessage(
+      "⚠️ A captura de tela falhou (" +
+        (err?.name || "erro") +
+        "). O navegador só permite transmitir em HTTPS — abra o site publicado (github.io) ou um servidor local. Veja o README."
+    );
+    return;
   }
   await set(stateRef(), { active: true, uid: myUid, name: myName, hue: myHue, at: serverTimestamp() });
   onDisconnect(stateRef()).remove();
@@ -820,8 +862,11 @@ async function inviteMoreToCall() {
 async function enterCallRoom(roomId, asHost, hostName) {
   try {
     localMic = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    addSystemMessage("⚠️ Não consegui acessar seu microfone — verifique a permissão do navegador.");
+  } catch (err) {
+    console.warn(err);
+    addSystemMessage(
+      "⚠️ Sem acesso ao microfone — verifique a permissão do navegador. Dica: em HTTPS funciona de boa; abrindo o arquivo direto do disco (file://) alguns navegadores bloqueiam."
+    );
     return false;
   }
 
@@ -1114,19 +1159,27 @@ callInviteMore.addEventListener("click", () => openCallPanel("invite-more"));
 // ------------------------------------------------------------
 const friendsBtn = $("friends-btn");
 const friendsBadge = $("friends-badge");
-const friendsPanel = $("friends-panel");
-const friendsClose = $("friends-close");
+const sidebarEl = $("sidebar");
+const navGlobal = $("nav-global");
+const sidebarRequests = $("sidebar-requests");
+const sidebarFriends = $("sidebar-friends");
+const openAddFriend = $("open-add-friend");
+const addFriendPanel = $("add-friend-panel");
+const addFriendClose = $("add-friend-close");
 const addFriendList = $("add-friend-list");
-const requestsList = $("requests-list");
-const friendsList = $("friends-list");
-const requestsTitle = $("requests-title");
-const friendsTitle = $("friends-title");
-const dmOverlay = $("dm-overlay");
-const dmFriendName = $("dm-friend-name");
-const dmFriendStatus = $("dm-friend-status");
+const myProfile = $("my-profile");
+const myAvatar = $("my-avatar");
+const myNameEl = $("my-name");
+const myCrown = $("my-crown");
+const profilePanel = $("profile-panel");
+const profileClose = $("profile-close");
+const profileAvatarBig = $("profile-avatar-big");
+const pickPhoto = $("pick-photo");
+const removePhotoBtn = $("remove-photo");
+const photoInput = $("photo-input");
+const dmTitle = $("dm-title");
+const dmStatusEl = $("dm-status");
 const dmRemove = $("dm-remove");
-const dmClose = $("dm-close");
-const dmBack = $("dm-back");
 const dmMessagesEl = $("dm-messages");
 const dmForm = $("dm-form");
 const dmInput = $("dm-input");
@@ -1135,7 +1188,6 @@ let friendsMap = new Map();     // uid -> { name, hue, since }
 let pendingRequests = new Map(); // uid -> { name, hue, at }
 let sentRequests = new Set();   // pedidos que EU enviei (nesta sessão)
 let dmRooms = new Map();       // friendUid -> { unsubs, unread, msgs }
-let openDmUid = null;
 let prevFriendsCount = 0;
 let prevRequestsCount = 0;
 
@@ -1223,7 +1275,7 @@ async function removeFriend(uid) {
     room.unsubs.forEach((u) => u());
     dmRooms.delete(uid);
   }
-  if (openDmUid === uid) closeDm();
+  if (activeChannel === uid) switchChannel(null);
   await remove(ref(db, `friends/${myUid}/${uid}`)).catch(() => {});
   await remove(ref(db, `friends/${uid}/${myUid}`)).catch(() => {});
   addSystemMessage("💔 Amizade removida.");
@@ -1253,15 +1305,15 @@ function reconcileDmListeners() {
           const data = snap.val();
           if (!data) return;
           room.msgs.push(data);
-          if (openDmUid === uid) {
+          if (activeChannel === uid) {
             renderDmMessages(uid);
           } else if (data.uid !== myUid) {
             const first = room.unread === 0;
             room.unread++;
             updateFriendsBadge();
-            if (!friendsPanel.classList.contains("hidden")) renderFriendsPanel();
+            renderFriendsPanel();
             if (first) {
-              addSystemMessage(`💬 ${data.name || "Alguém"} te mandou uma mensagem privada (abra 👥).`);
+              addSystemMessage(`💬 ${data.name || "Alguém"} te mandou uma mensagem privada (veja na barra lateral 👈).`);
             }
           }
         },
@@ -1271,32 +1323,123 @@ function reconcileDmListeners() {
   }
 }
 
-// ---------- Conversa privada ----------
-function openDm(uid) {
-  const info = friendsMap.get(uid);
-  if (!info) return;
-  openDmUid = uid;
-  const room = dmRooms.get(uid);
-  if (room) room.unread = 0;
-  const live = onlineUsers.get(uid);
-  dmFriendName.textContent = live?.name || info.name || "Amigo";
-  updateDmStatus();
-  renderDmMessages(uid);
-  updateFriendsBadge();
-  friendsPanel.classList.add("hidden");
-  dmOverlay.classList.remove("hidden");
-  dmInput.focus();
-}
-
-function closeDm() {
-  openDmUid = null;
-  dmOverlay.classList.add("hidden");
+// ---------- Canais (estilo Discord) ----------
+function switchChannel(uid) {
+  // uid = null -> chat global | uid de amigo -> conversa privada
+  activeChannel = uid || "global";
+  const isDm = activeChannel !== "global";
+  $("channel-global").classList.toggle("hidden", isDm);
+  $("channel-dm").classList.toggle("hidden", !isDm);
+  navGlobal.classList.toggle("active", !isDm);
+  if (isDm) {
+    const room = dmRooms.get(uid);
+    if (room) room.unread = 0;
+    const info = friendsMap.get(uid);
+    const live = onlineUsers.get(uid);
+    dmTitle.textContent = "@ " + (live?.name || info?.name || "Amigo");
+    updateDmStatus();
+    renderDmMessages(uid);
+    renderFriendsPanel();
+    updateFriendsBadge();
+    dmInput.focus();
+  } else {
+    renderFriendsPanel();
+    msgInput.focus();
+  }
 }
 
 function updateDmStatus() {
-  if (!openDmUid) return;
-  dmFriendStatus.textContent = onlineUsers.has(openDmUid) ? "🟢 online" : "⚫ offline";
+  if (activeChannel === "global") return;
+  dmStatusEl.textContent = onlineUsers.has(activeChannel) ? "🟢 online" : "⚫ offline";
 }
+
+// ---------- Perfil e foto ----------
+function updateMyProfileRow() {
+  myAvatar.innerHTML = "";
+  myAvatar.appendChild(makeAvatarEl({ name: myName, hue: myHue, photo: myPhoto }));
+  myNameEl.textContent = myName;
+  myCrown.classList.toggle("hidden", !isAdmin);
+}
+
+function showProfilePanel() {
+  profileAvatarBig.innerHTML = "";
+  profileAvatarBig.appendChild(makeAvatarEl({ name: myName, hue: myHue, photo: myPhoto }));
+  profilePanel.classList.remove("hidden");
+}
+
+pickPhoto.addEventListener("click", () => photoInput.click());
+
+photoInput.addEventListener("change", () => {
+  const file = photoInput.files && photoInput.files[0];
+  photoInput.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = async () => {
+      // Corte central quadrado + redimensiona para 96×96
+      const size = 96;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const min = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - min) / 2, (img.height - min) / 2, min, min, 0, 0, size, size);
+      myPhoto = canvas.toDataURL("image/jpeg", 0.75);
+      await set(ref(db, `users/${myUid}/photo`), myPhoto).catch(() => {});
+      set(ref(db, `presence/${myUid}`), {
+        name: myName,
+        hue: myHue,
+        photo: myPhoto,
+        at: serverTimestamp(),
+      }).catch(() => {});
+      showProfilePanel();
+      updateMyProfileRow();
+      addSystemMessage("📷 Foto de perfil atualizada!");
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+removePhotoBtn.addEventListener("click", async () => {
+  myPhoto = null;
+  await remove(ref(db, `users/${myUid}/photo`)).catch(() => {});
+  set(ref(db, `presence/${myUid}`), {
+    name: myName,
+    hue: myHue,
+    photo: null,
+    at: serverTimestamp(),
+  }).catch(() => {});
+  showProfilePanel();
+  updateMyProfileRow();
+  addSystemMessage("📷 Foto de perfil removida.");
+});
+
+myProfile.addEventListener("click", showProfilePanel);
+profileClose.addEventListener("click", () => profilePanel.classList.add("hidden"));
+
+// ---------- Adicionar amigo ----------
+function renderAddFriendList() {
+  addFriendList.innerHTML = "";
+  let any = false;
+  for (const [uid, info] of onlineUsers) {
+    if (uid === myUid || friendsMap.has(uid) || pendingRequests.has(uid)) continue;
+    if (sentRequests.has(uid)) continue;
+    any = true;
+    addFriendList.appendChild(
+      makeUserRow(uid, info, [mkBtn("➕", "Adicionar amigo", () => sendFriendRequest(uid))])
+    );
+  }
+  if (!any) emptyNote(addFriendList, "Ninguém novo online agora 😴");
+}
+
+openAddFriend.addEventListener("click", () => {
+  renderAddFriendList();
+  addFriendPanel.classList.remove("hidden");
+});
+
+addFriendClose.addEventListener("click", () => addFriendPanel.classList.add("hidden"));
 
 function renderDmMessages(uid) {
   const room = dmRooms.get(uid);
@@ -1315,6 +1458,7 @@ function appendDmBubble(m) {
 
   const head = document.createElement("div");
   head.className = "msg-head";
+  const davatar = makeAvatarEl({ name: m.name, hue: m.hue, photo: onlineUsers.get(m.uid)?.photo });
   const nm = document.createElement("span");
   nm.className = "name";
   nm.style.color = `hsl(${m.hue ?? 220} 80% 70%)`;
@@ -1324,7 +1468,7 @@ function appendDmBubble(m) {
   tm.textContent = m.at
     ? new Date(m.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
     : "";
-  head.append(nm, tm);
+  head.append(davatar, nm, tm);
 
   const txt = document.createElement("div");
   txt.className = "text";
@@ -1335,42 +1479,26 @@ function appendDmBubble(m) {
   dmMessagesEl.appendChild(wrap);
 }
 
-// ---------- Painel de amigos ----------
+// ---------- Barra lateral de amigos ----------
 function renderFriendsPanel() {
-  // Adicionar amigos (online, não amigos, sem pedido pendente)
-  addFriendList.innerHTML = "";
-  let anyAdd = false;
-  for (const [uid, info] of onlineUsers) {
-    if (uid === myUid || friendsMap.has(uid) || pendingRequests.has(uid)) continue;
-    if (sentRequests.has(uid)) continue;
-    anyAdd = true;
-    addFriendList.appendChild(
-      makeUserRow(uid, info, [mkBtn("➕", "Adicionar amigo", () => sendFriendRequest(uid))])
+  // Solicitações recebidas (topo da lista)
+  sidebarRequests.innerHTML = "";
+  for (const [uid, info] of pendingRequests) {
+    sidebarRequests.appendChild(
+      makeUserRow(uid, info, [
+        mkBtn("✅", "Aceitar", () => acceptRequest(uid)),
+        mkBtn("✖", "Recusar", () => declineRequest(uid)),
+      ])
     );
-  }
-  if (!anyAdd) emptyNote(addFriendList, "Ninguém novo online agora 😴");
-
-  // Solicitações recebidas
-  requestsTitle.textContent = `Solicitações (${pendingRequests.size})`;
-  requestsList.innerHTML = "";
-  if (!pendingRequests.size) {
-    emptyNote(requestsList, "Nenhuma solicitação pendente.");
-  } else {
-    for (const [uid, info] of pendingRequests) {
-      requestsList.appendChild(
-        makeUserRow(uid, info, [
-          mkBtn("✅", "Aceitar", () => acceptRequest(uid)),
-          mkBtn("✖", "Recusar", () => declineRequest(uid)),
-        ])
-      );
-    }
   }
 
   // Lista de amigos
-  friendsTitle.textContent = `Meus amigos (${friendsMap.size})`;
-  friendsList.innerHTML = "";
+  sidebarFriends.innerHTML = "";
   if (!friendsMap.size) {
-    emptyNote(friendsList, "Você ainda não tem amigos. Adicione alguém acima! 💚");
+    const p = document.createElement("p");
+    p.className = "side-empty";
+    p.textContent = "Nenhum amigo ainda — use o ➕ acima!";
+    sidebarFriends.appendChild(p);
   } else {
     const sorted = [...friendsMap.entries()].sort((a, b) => {
       const onA = onlineUsers.has(a[0]) ? 1 : 0;
@@ -1380,6 +1508,7 @@ function renderFriendsPanel() {
     });
     for (const [uid, info] of sorted) {
       const row = makeUserRow(uid, info, []);
+      if (activeChannel === uid) row.classList.add("active");
       const dot = document.createElement("span");
       dot.textContent = onlineUsers.has(uid) ? "🟢" : "⚫";
       dot.title = onlineUsers.has(uid) ? "Online" : "Offline";
@@ -1391,19 +1520,21 @@ function renderFriendsPanel() {
         b.textContent = room.unread > 99 ? "99+" : room.unread;
         row.appendChild(b);
       }
-      row.addEventListener("click", () => openDm(uid));
-      friendsList.appendChild(row);
+      row.addEventListener("click", () => switchChannel(uid));
+      sidebarFriends.appendChild(row);
     }
   }
+
+  // Se o modal de adicionar amigo estiver aberto, atualiza
+  if (!addFriendPanel.classList.contains("hidden")) renderAddFriendList();
+
+  updateMyProfileRow();
 }
 
 function makeUserRow(uid, info, buttons) {
   const row = document.createElement("div");
   row.className = "friend-row";
-  const av = document.createElement("span");
-  av.className = "avatar";
-  av.style.background = `hsl(${info.hue ?? 220} 70% 45%)`;
-  av.textContent = (info.name || "?").slice(0, 1).toUpperCase();
+  const av = makeAvatarEl(info);
   const nm = document.createElement("span");
   nm.className = "friend-name";
   nm.textContent = info.name || "Anônimo";
@@ -1448,31 +1579,22 @@ function updateFriendsBadge() {
 
 // ---------- Botões ----------
 friendsBtn.addEventListener("click", () => {
-  if (!db) {
-    addSystemMessage("⚠️ Firebase não configurado.");
-    return;
-  }
-  renderFriendsPanel();
-  friendsPanel.classList.toggle("hidden");
+  // Mostra/esconde a barra lateral (útil no celular)
+  sidebarEl.classList.toggle("hidden");
 });
 
-friendsClose.addEventListener("click", () => friendsPanel.classList.add("hidden"));
-
-dmClose.addEventListener("click", closeDm);
-dmBack.addEventListener("click", () => {
-  closeDm();
-  friendsPanel.classList.remove("hidden");
-});
+navGlobal.addEventListener("click", () => switchChannel(null));
 
 dmRemove.addEventListener("click", () => {
-  if (openDmUid) removeFriend(openDmUid);
+  if (activeChannel !== "global") removeFriend(activeChannel);
 });
 
 dmForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = dmInput.value.trim().slice(0, 500);
-  if (!text || !openDmUid) return;
-  const key = roomKeyFor(myUid, openDmUid);
+  const target = activeChannel !== "global" ? activeChannel : null;
+  if (!text || !target) return;
+  const key = roomKeyFor(myUid, target);
   await push(ref(db, `dm/${key}/messages`), {
     uid: myUid,
     name: myName,

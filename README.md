@@ -39,6 +39,11 @@ Qualquer usuário pode transmitir a tela do PC: clique no botão **🖥️** no 
 - O navegador só permite captura de tela em **HTTPS** (GitHub Pages ✓). Abrindo o `index.html` direto do disco (file://) a captura fica bloqueada.
 - Redes muito restritivas podem bloquear a conexão direta (exigiria servidor TURN, não incluído).
 
+## 🖥️ Layout estilo Discord + foto de perfil
+
+- **Barra lateral esquerda:** "🌐 Chat Global" no topo e seus amigos abaixo (com 🟢/⚫ e badge de não lidas). Clique num amigo para abrir a conversa privada no painel direito; clique em "🌐 Chat Global" para voltar.
+- **Foto de perfil:** clique no seu nome (rodapé da barra lateral) → "Escolher foto". A imagem é cortada em círculo e reduzida para 96×96 automaticamente, e aparece no chat, na lista de amigos e nas presenças.
+
 ## 🔐 Registro, login e conta admin
 
 - Todo mundo cria conta com **nome de usuário + senha** (o e-mail interno é gerado sozinho — ninguém precisa digitar email).
