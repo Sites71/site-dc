@@ -55,8 +55,6 @@ const messagesEl = $("messages");
 const msgForm = $("message-form");
 const msgInput = $("message-input");
 const onlineEl = $("online-count");
-const musicBtn = $("music-btn");
-const musicEl = $("bg-music");
 const passInput = $("pass-input");
 const registerForm = $("register-form");
 const regNameInput = $("reg-name-input");
@@ -287,8 +285,11 @@ function enterChat(prof) {
   if (isAdmin) {
     clearChatBtn.classList.remove("hidden");
     addSystemMessage(
-      "👑 Modo administrador: você pode apagar mensagens, limpar o chat e encerrar transmissões."
+      "👑 Modo administrador: você pode apagar mensagens, limpar o chat, transmitir a tela globalmente e encerrar transmissões."
     );
+  } else {
+    // Transmissão de tela global é exclusiva do administrador
+    streamBtn.classList.add("hidden");
   }
 
   listenToMessages();
@@ -446,29 +447,6 @@ function setupPresence() {
     () => (onlineEl.textContent = "🟢 —")
   );
 }
-
-// ------------------------------------------------------------
-// 🎵 Música de fundo
-// ------------------------------------------------------------
-musicEl.volume = 0.35;
-
-musicBtn.addEventListener("click", async () => {
-  if (musicEl.paused) {
-    try {
-      await musicEl.play();
-      musicBtn.textContent = "🔊";
-      musicBtn.classList.add("playing");
-      musicBtn.title = "Pausar música";
-    } catch (err) {
-      console.warn("Não foi possível tocar a música:", err);
-    }
-  } else {
-    musicEl.pause();
-    musicBtn.textContent = "🎵";
-    musicBtn.classList.remove("playing");
-    musicBtn.title = "Tocar música";
-  }
-});
 
 // ------------------------------------------------------------
 // 🖥️ Transmissão de tela (WebRTC ponto a ponto)
@@ -667,6 +645,7 @@ function stopWatching() {
 
 streamBtn.addEventListener("click", () => {
   if (!db) { addSystemMessage("⚠️ Firebase não configurado — transmissão indisponível."); return; }
+  if (!isAdmin) { addSystemMessage("🔒 A transmissão global de tela é exclusiva do administrador 👑."); return; }
   if (iAmLive) stopBroadcast();
   else startBroadcast();
 });
@@ -704,11 +683,15 @@ const callMembersEl = $("call-members");
 const callLeave = $("call-leave");
 const callMute = $("call-mute");
 const callInviteMore = $("call-invite-more");
+const callShareBtn = $("call-share");
+const callScreenOverlay = $("call-screen-overlay");
+const callScreenLabel = $("call-screen-label");
+const callScreenVideo = $("call-screen-video");
 const callAudioContainer = $("call-audio-container");
 
 let onlineUsers = new Map(); // uid -> { name, hue, at }
 let currentMembers = {};      // membros da minha sala atual
-let callPeers = new Map();    // uid -> { pc, name, hue, audioEl, remoteReady, candsBuf }
+let callPeers = new Map();    // uid -> { pc, name, hue, audioEls, remoteReady, candsBuf, screenVideoSender, screenAudioSender }
 let callUnsubs = [];
 let localMic = null;
 let micOn = true;
@@ -716,6 +699,8 @@ let callRoomId = null;
 let pendingInvite = null;
 let callPanelMode = "start";
 let selectedToCall = new Set();
+let sharingUid = null;       // quem está compartilhando a tela nesta chamada
+let callScreenStream = null; // minha captura de tela na chamada
 
 function setupCalls() {
   // Detecta convites dirigidos a mim
@@ -874,6 +859,12 @@ async function enterCallRoom(roomId, asHost, hostName) {
   micOn = true;
   callMute.textContent = "🎙️";
   callMute.classList.remove("off");
+  sharingUid = null;
+  callScreenStream = null;
+  callScreenVideo.srcObject = null;
+  callScreenOverlay.classList.add("hidden");
+  callShareBtn.textContent = "🖥️";
+  callShareBtn.classList.remove("on");
   callRoomLabel.textContent = asHost ? "🔊 Sua chamada" : `🔊 Chamada de ${hostName || "alguém"}`;
   callOverlay.classList.remove("hidden");
   callBtn.classList.add("on");
@@ -902,6 +893,7 @@ async function leaveCall() {
 
   callUnsubs.forEach((u) => u());
   callUnsubs = [];
+  stopCallScreenShare();
   callPeers.forEach((entry, uid) => destroyPeerPC(uid));
   if (localMic) {
     localMic.getTracks().forEach((t) => t.stop());
@@ -960,10 +952,23 @@ function reconcileMesh() {
 
 function createPeerPC(uid, m) {
   const pc = new RTCPeerConnection(ICE_SERVERS);
-  const entry = { pc, name: m.name, hue: m.hue, remoteReady: false, candsBuf: [] };
+  const entry = { pc, name: m.name, hue: m.hue, remoteReady: false, candsBuf: [], audioEls: [] };
   callPeers.set(uid, entry);
 
   if (localMic) localMic.getTracks().forEach((t) => pc.addTrack(t, localMic));
+
+  // Transceivers extras para compartilhar tela na chamada (sem renegociar conexão)
+  const svT = pc.addTransceiver("video", { direction: "sendrecv" });
+  const saT = pc.addTransceiver("audio", { direction: "sendrecv" });
+  entry.screenVideoSender = svT.sender;
+  entry.screenAudioSender = saT.sender;
+
+  // Se eu já estava compartilhando, aplica pra quem acabou de entrar na chamada
+  if (sharingUid === myUid && callScreenStream) {
+    entry.screenVideoSender.replaceTrack(callScreenStream.getVideoTracks()[0]).catch(() => {});
+    const aTrack = callScreenStream.getAudioTracks()[0] || null;
+    entry.screenAudioSender.replaceTrack(aTrack).catch(() => {});
+  }
 
   pc.onicecandidate = (e) => {
     if (e.candidate && callRoomId) {
@@ -975,12 +980,33 @@ function createPeerPC(uid, m) {
   };
 
   pc.ontrack = (e) => {
-    const audio = document.createElement("audio");
-    audio.autoplay = true;
-    audio.srcObject = e.streams[0];
-    audio.play().catch(() => {});
-    entry.audioEl = audio;
-    callAudioContainer.appendChild(audio);
+    const ms = e.streams[0] || new MediaStream([e.track]);
+
+    if (e.track.kind === "video") {
+      // Tela compartilhada pelo outro lado
+      callScreenVideo.srcObject = ms;
+      e.track.onunmute = () => {
+        if (sharingUid !== myUid) {
+          sharingUid = uid;
+          updateCallShareUI();
+        }
+        callScreenVideo.play().catch(() => {});
+      };
+      e.track.onmute = () => {
+        if (sharingUid === uid) {
+          sharingUid = null;
+          updateCallShareUI();
+        }
+      };
+    } else {
+      // Áudio (microfone ou áudio da tela compartilhada)
+      const audio = document.createElement("audio");
+      audio.autoplay = true;
+      audio.srcObject = ms;
+      audio.play().catch(() => {});
+      entry.audioEls.push(audio);
+      callAudioContainer.appendChild(audio);
+    }
   };
 
   // O menor uid faz a oferta (evita os dois lados falarem ao mesmo tempo)
@@ -1001,7 +1027,11 @@ function destroyPeerPC(uid) {
   const entry = callPeers.get(uid);
   if (!entry) return;
   try { entry.pc.close(); } catch {}
-  if (entry.audioEl) entry.audioEl.remove();
+  (entry.audioEls || []).forEach((a) => a.remove());
+  if (sharingUid === uid) {
+    sharingUid = null;
+    updateCallShareUI();
+  }
   callPeers.delete(uid);
 }
 
@@ -1153,6 +1183,90 @@ callMute.addEventListener("click", () => {
 });
 
 callInviteMore.addEventListener("click", () => openCallPanel("invite-more"));
+
+// ---------- 🖥️ Compartilhar tela DENTRO da chamada ----------
+async function startCallScreenShare() {
+  if (!callRoomId) return;
+  if (sharingUid && sharingUid !== myUid) {
+    addSystemMessage(
+      "⚠️ " + (callPeers.get(sharingUid)?.name || "Alguém") + " já está compartilhando a tela nesta chamada."
+    );
+    return;
+  }
+  try {
+    callScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+  } catch (err) {
+    console.warn(err);
+    if (err && (err.name === "NotAllowedError" || err.name === "AbortError")) return;
+    addSystemMessage(
+      "⚠️ A captura de tela falhou (" + (err?.name || "erro") + "). Teste em HTTPS (site publicado ou localhost)."
+    );
+    return;
+  }
+  sharingUid = myUid;
+  const vTrack = callScreenStream.getVideoTracks()[0];
+  const aTrack = callScreenStream.getAudioTracks()[0] || null;
+  for (const [, entry] of callPeers) {
+    entry.screenVideoSender?.replaceTrack(vTrack).catch(() => {});
+    entry.screenAudioSender?.replaceTrack(aTrack).catch(() => {});
+  }
+  vTrack.addEventListener("ended", stopCallScreenShare);
+  callScreenVideo.srcObject = callScreenStream;
+  updateCallShareUI();
+  addSystemMessage("🖥️ Você está compartilhando sua tela na chamada!");
+}
+
+function stopCallScreenShare() {
+  if (callScreenStream) {
+    callScreenStream.getTracks().forEach((t) => t.stop());
+    callScreenStream = null;
+  }
+  for (const [, entry] of callPeers) {
+    entry.screenVideoSender?.replaceTrack(null).catch(() => {});
+    entry.screenAudioSender?.replaceTrack(null).catch(() => {});
+  }
+  if (sharingUid === myUid) {
+    sharingUid = null;
+    updateCallShareUI();
+  }
+}
+
+function updateCallShareUI() {
+  callShareBtn.classList.toggle("on", sharingUid === myUid);
+  callShareBtn.textContent = sharingUid === myUid ? "🛑" : sharingUid ? "📺" : "🖥️";
+  callShareBtn.title =
+    sharingUid === myUid
+      ? "Parar de compartilhar a tela"
+      : sharingUid
+        ? "Ver a tela compartilhada"
+        : "Compartilhar sua tela";
+
+  if (sharingUid === myUid) {
+    callScreenLabel.textContent = "🛑 Você está compartilhando sua tela";
+    callScreenOverlay.classList.remove("hidden");
+  } else if (sharingUid) {
+    const info = callPeers.get(sharingUid);
+    callScreenLabel.textContent = `🖥️ ${info?.name || "Alguém"} está compartilhando a tela`;
+    callScreenOverlay.classList.remove("hidden");
+  } else {
+    callScreenOverlay.classList.add("hidden");
+    callScreenVideo.srcObject = null;
+  }
+}
+
+callShareBtn.addEventListener("click", () => {
+  if (!callRoomId) return;
+  if (sharingUid === myUid) {
+    stopCallScreenShare();
+    return;
+  }
+  if (sharingUid) {
+    // espectador: mostra/esconde a visualização
+    callScreenOverlay.classList.toggle("hidden");
+    return;
+  }
+  startCallScreenShare();
+});
 
 // ------------------------------------------------------------
 // 👥 Amigos + conversas privadas (DM)

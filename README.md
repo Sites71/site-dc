@@ -6,12 +6,6 @@ Chat **global em tempo real**, 100% estático (HTML + CSS + JS puro), feito para
 
 O GitHub Pages só hospeda arquivos estáticos — sem servidor. Por isso, o chat usa o **Realtime Database** do Firebase (plano gratuito "Spark") para sincronizar as mensagens entre todos os visitantes em tempo real, além de mostrar quantos usuários estão online.
 
-## 🎵 Música de fundo
-
-O site traz o beat **"Minha Quebrada"** como música de fundo opcional. Como os navegadores bloqueiam som automático, ela só toca quando o visitante clica no botão **🎵/🔊** no topo do chat.
-
-> Créditos: "[FREE] Beat Trap Instrumental – Minha Quebrada" – Prod. ExsBeats.
-
 ## 👥 Amigos + conversas privadas (DM)
 
 - Botão **👥** abre o painel de amigos: **adicionar** quem estiver online (➕), **aceitar/recusar solicitações** (✅/✖) e ver seus amigos com status 🟢/⚫.
@@ -25,14 +19,14 @@ O site traz o beat **"Minha Quebrada"** como música de fundo opcional. Como os 
 Clique em **📞** no topo, marque quem está online e clique em **Iniciar chamada**. Os convidados recebem um "toque" na tela com as opções **Atender** ou **Recusar** — só quem é convidado vê a chamada (privada).
 
 - O áudio vai **direto entre os PCs** (WebRTC em malha) — o Firebase só organiza convites e conexões.
-- Durante a chamada: **mute o microfone** (🔇), **convide mais pessoas** (➕) ou saia (🚪).
+- Durante a chamada: **mute o microfone** (🔇), **compartilhe sua tela com os amigos da chamada** (🖥️ — todos veem na hora), **convide mais pessoas** (➕) ou saia (🚪).
 - Quem recusa/sai aparece com 🚫/↩️ na lista de membros.
 - Ideal para grupos pequenos (3–8 pessoas): em malha, cada pessoa conecta com todas as outras.
 - Requer **HTTPS** (GitHub Pages ✓) e permissão de microfone.
 
-## 🖥️ Transmissão de tela ao vivo
+## 🖥️ Transmissão de tela global (exclusiva do admin)
 
-Qualquer usuário pode transmitir a tela do PC: clique no botão **🖥️** no topo. Os outros veem um **banner vermelho pulsando** e clicam para assistir.
+Apenas o administrador (**👑 LIMON**) pode transmitir a tela para o site inteiro: clique no botão **🖥️** no topo. Todos os outros usuários veem um **banner vermelho pulsando** e clicam para assistir.
 
 - A tela vai **direto do PC do transmissor para cada espectador** (WebRTC ponto a ponto) — o Firebase só troca os dados de conexão (poucos KB).
 - Uma transmissão por vez; espectadores ilimitados.
@@ -128,10 +122,8 @@ Um site no GitHub Pages é **público**: qualquer visitante pode abrir o código
 ## 📁 Estrutura
 
 ```
-├── index.html     # interface
-├── style.css      # visual (tema escuro + GIF de fundo)
-├── app.js         # lógica + integração Firebase
-├── musica.mp3     # música de fundo (créditos acima)
-├── background.gif # imagem/GIF animado de fundo do site
+├── index.html   # interface
+├── style.css    # visual (estilo Discord)
+├── app.js       # lógica + integração Firebase
 └── README.md
 ```
