@@ -64,6 +64,12 @@
           <div class="sidebar-item" id="nav-global" title="Chat global">🌐 <span class="side-label">Chat Global</span></div>
 
           <div class="side-head">
+            <span class="side-label">GRUPOS</span>
+            <button id="open-create-group" type="button" class="mini-plus" title="Criar grupo">➕</button>
+          </div>
+          <div id="sidebar-groups"></div>
+
+          <div class="side-head">
             <span class="side-label">AMIGOS</span>
             <button id="open-add-friend" type="button" class="mini-plus" title="Adicionar amigo">➕</button>
           </div>
@@ -99,8 +105,11 @@
         <!-- Canal: conversa privada -->
         <div id="channel-dm" class="hidden">
           <div class="channel-head">
+            <span id="dm-avatar" class="dm-avatar"></span>
             <span class="channel-title" id="dm-title">@ Amigo</span>
             <span class="channel-sub" id="dm-status">⚫ offline</span>
+            <button id="group-invite-btn" type="button" class="btn-leave hidden" title="Adicionar amigos ao grupo">➕</button>
+            <button id="group-leave-btn" type="button" class="btn-leave hidden" title="Sair do grupo">🚪</button>
             <button id="dm-remove" type="button" class="btn-leave" title="Remover amizade">🗑️</button>
           </div>
           <div id="dm-messages" class="dm-messages"></div>
@@ -116,6 +125,7 @@
   <!-- 🖥️ Player da transmissão ao vivo -->
   <div id="watch-overlay" class="watch-overlay hidden">
     <video id="watch-video" autoplay playsinline></video>
+    <button id="watch-unmute" type="button" class="btn-leave hidden" title="O celular bloqueou o som — clique para ativar">🔇 Ativar som</button>
     <button id="watch-close" type="button">✕ Sair da transmissão</button>
   </div>
 
@@ -135,7 +145,7 @@
   <!-- 🔔 Toque de chamada recebida -->
   <div id="ring-overlay" class="ring-overlay hidden">
     <div class="ring-box">
-      <div class="ring-icon">📞</div>
+      <span id="ring-avatar" class="ring-avatar-wrap"></span>
       <h3 id="ring-title">Estão te chamando!</h3>
       <p id="ring-sub">Chamada de voz em grupo</p>
       <div class="ring-actions">
@@ -165,6 +175,7 @@
     <div class="call-screen-box">
       <div id="call-screen-label" class="call-screen-label">🖥️ Tela compartilhada</div>
       <video id="call-screen-video" autoplay playsinline></video>
+      <button id="call-screen-unmute" type="button" class="btn-leave hidden" title="O celular bloqueou o som — clique para ativar">🔇 Ativar som</button>
     </div>
   </div>
 
@@ -192,6 +203,20 @@
       <button id="pick-photo" type="button" class="btn-primary">📷 Escolher foto de perfil</button>
       <button id="remove-photo" type="button" class="btn-ghost">Remover foto</button>
       <p class="muted-note">A imagem é cortada em círculo e reduzida para 96×96 automaticamente.</p>
+    </div>
+  </div>
+
+  <!-- 👥 Criar grupo -->
+  <div id="create-group-panel" class="call-panel hidden">
+    <div class="call-box">
+      <div class="call-box-head">
+        <h3 id="create-group-title">👥 Criar grupo</h3>
+        <button id="create-group-close" type="button" class="icon-btn">✕</button>
+      </div>
+      <input id="group-name-input" type="text" class="text-input" placeholder="Nome do grupo (ex: A Turma)" maxlength="30" />
+      <p class="muted-note">Escolha os amigos que vão participar:</p>
+      <div id="group-members-list" class="call-user-list"></div>
+      <button id="create-group-btn" type="button" class="btn-primary">Criar grupo ➜</button>
     </div>
   </div>
 

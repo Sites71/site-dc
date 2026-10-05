@@ -130,6 +130,24 @@ function makeAvatarEl(info, extraClass) {
   return el;
 }
 
+// Toca vídeo com som; se o navegador (celular) bloquear, começa mudo
+// e mostra um botão para o usuário ativar o som com 1 clique.
+function playVideoWithSound(video, unmuteBtn) {
+  video.muted = false;
+  const p = video.play();
+  if (p && p.then) {
+    p
+      .then(() => {
+        if (unmuteBtn) unmuteBtn.classList.add("hidden");
+      })
+      .catch(() => {
+        video.muted = true;
+        video.play().catch(() => {});
+        if (unmuteBtn) unmuteBtn.classList.remove("hidden");
+      });
+  }
+}
+
 function addSystemMessage(text) {
   const div = document.createElement("div");
   div.className = "system";
@@ -298,6 +316,7 @@ function enterChat(prof) {
   setupStreaming();
   setupCalls();
   setupFriends();
+  setupGroups();
   addSystemMessage(`Bem-vindo, ${myName}! 👋`);
 }
 
@@ -460,6 +479,7 @@ const watchBtn = $("watch-btn");
 const watchOverlay = $("watch-overlay");
 const watchVideo = $("watch-video");
 const watchClose = $("watch-close");
+const watchUnmute = $("watch-unmute");
 
 const ICE_SERVERS = {
   iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }],
@@ -593,7 +613,7 @@ async function startWatching() {
   watchPC.ontrack = (e) => {
     watchVideo.srcObject = e.streams[0];
     watchOverlay.classList.remove("hidden");
-    watchVideo.play().catch(() => {});
+    playVideoWithSound(watchVideo, watchUnmute);
     watchBtn.textContent = "⏹️ Sair da transmissão";
   };
 
@@ -676,6 +696,7 @@ const startCallBtn = $("start-call-btn");
 const ringOverlay = $("ring-overlay");
 const ringTitle = $("ring-title");
 const ringSub = $("ring-sub");
+const ringAvatar = $("ring-avatar");
 const ringAccept = $("ring-accept");
 const ringDecline = $("ring-decline");
 const callOverlay = $("call-overlay");
@@ -688,6 +709,7 @@ const callShareBtn = $("call-share");
 const callScreenOverlay = $("call-screen-overlay");
 const callScreenLabel = $("call-screen-label");
 const callScreenVideo = $("call-screen-video");
+const callScreenUnmute = $("call-screen-unmute");
 const callAudioContainer = $("call-audio-container");
 
 let onlineUsers = new Map(); // uid -> { name, hue, at }
@@ -709,14 +731,21 @@ function setupCalls() {
     const inv = snap.val();
     if (inv && inv.roomId && !callRoomId) {
       pendingInvite = inv;
-      ringTitle.textContent = `📞 ${inv.hostName || "Alguém"} está te chamando!`;
-      ringSub.textContent = "Chamada de voz em grupo";
-      ringOverlay.classList.remove("hidden");
+      showRing(inv);
     } else if (!inv) {
       pendingInvite = null;
       ringOverlay.classList.add("hidden");
     }
   });
+}
+
+// Mostra o toque de chamada com o avatar de quem chama
+function showRing(inv) {
+  ringTitle.textContent = `📞 ${inv.hostName || "Alguém"} está te chamando!`;
+  ringSub.textContent = "Chamada de voz em grupo";
+  ringAvatar.innerHTML = "";
+  ringAvatar.appendChild(makeAvatarEl({ name: inv.hostName, hue: inv.hue, photo: inv.photo }));
+  ringOverlay.classList.remove("hidden");
 }
 
 // ---------- Painel de seleção ----------
@@ -744,10 +773,7 @@ function renderCallUserList() {
     const row = document.createElement("div");
     row.className = "call-user";
 
-    const av = document.createElement("span");
-    av.className = "avatar";
-    av.style.background = `hsl(${info.hue ?? 220} 70% 45%)`;
-    av.textContent = (info.name || "?").slice(0, 1).toUpperCase();
+    const av = makeAvatarEl(info);
 
     const nm = document.createElement("span");
     nm.textContent = info.name || "Anônimo";
@@ -801,6 +827,8 @@ async function startCall() {
       roomId,
       host: myUid,
       hostName: myName,
+      hue: myHue,
+      photo: myPhoto || null,
       at: serverTimestamp(),
     });
   }
@@ -836,6 +864,8 @@ async function inviteMoreToCall() {
       roomId: callRoomId,
       host: myUid,
       hostName: myName,
+      hue: myHue,
+      photo: myPhoto || null,
       at: serverTimestamp(),
     }).catch(() => {});
   }
@@ -991,7 +1021,7 @@ function createPeerPC(uid, m) {
           sharingUid = uid;
           updateCallShareUI();
         }
-        callScreenVideo.play().catch(() => {});
+        playVideoWithSound(callScreenVideo, callScreenUnmute);
       };
       e.track.onmute = () => {
         if (sharingUid === uid) {
@@ -1095,10 +1125,7 @@ function renderCallMembers() {
     const chip = document.createElement("div");
     chip.className = "member-chip";
 
-    const av = document.createElement("span");
-    av.className = "avatar";
-    av.style.background = `hsl(${m.hue ?? 220} 70% 45%)`;
-    av.textContent = (m.name || "?").slice(0, 1).toUpperCase();
+    const av = makeAvatarEl({ ...m, photo: onlineUsers.get(uid)?.photo });
 
     const nm = document.createElement("span");
     nm.textContent = m.name || "Anônimo";
@@ -1213,6 +1240,7 @@ async function startCallScreenShare() {
   }
   vTrack.addEventListener("ended", stopCallScreenShare);
   callScreenVideo.srcObject = callScreenStream;
+  playVideoWithSound(callScreenVideo, callScreenUnmute);
   updateCallShareUI();
   addSystemMessage("🖥️ Você está compartilhando sua tela na chamada!");
 }
@@ -1390,7 +1418,7 @@ async function removeFriend(uid) {
     room.unsubs.forEach((u) => u());
     dmRooms.delete(uid);
   }
-  if (activeChannel === uid) switchChannel(null);
+  if (activeChannel === "dm:" + uid) switchChannel("global");
   await remove(ref(db, `friends/${myUid}/${uid}`)).catch(() => {});
   await remove(ref(db, `friends/${uid}/${myUid}`)).catch(() => {});
   addSystemMessage("💔 Amizade removida.");
@@ -1420,7 +1448,7 @@ function reconcileDmListeners() {
           const data = snap.val();
           if (!data) return;
           room.msgs.push(data);
-          if (activeChannel === uid) {
+          if (activeChannel === "dm:" + uid) {
             renderDmMessages(uid);
           } else if (data.uid !== myUid) {
             const first = room.unread === 0;
@@ -1439,33 +1467,59 @@ function reconcileDmListeners() {
 }
 
 // ---------- Canais (estilo Discord) ----------
-function switchChannel(uid) {
-  // uid = null -> chat global | uid de amigo -> conversa privada
-  activeChannel = uid || "global";
-  const isDm = activeChannel !== "global";
-  $("channel-global").classList.toggle("hidden", isDm);
-  $("channel-dm").classList.toggle("hidden", !isDm);
-  navGlobal.classList.toggle("active", !isDm);
+function switchChannel(ch) {
+  // "global" | "dm:UID" | "grp:GID"
+  activeChannel = ch || "global";
+  const isDm = activeChannel.startsWith("dm:");
+  const isGroup = activeChannel.startsWith("grp:");
+  const showPanel = isDm || isGroup;
+
+  $("channel-global").classList.toggle("hidden", showPanel);
+  $("channel-dm").classList.toggle("hidden", !showPanel);
+  navGlobal.classList.toggle("active", !showPanel);
+
+  // Botões do cabeçalho do canal (dependem do tipo)
+  dmAvatar.classList.toggle("hidden", !isDm);
+  dmStatusEl.classList.toggle("hidden", !showPanel);
+  dmRemove.classList.toggle("hidden", !isDm);
+  groupInviteBtn.classList.toggle("hidden", !isGroup);
+  groupLeaveBtn.classList.toggle("hidden", !isGroup);
+
   if (isDm) {
+    const uid = activeChannel.slice(3);
     const room = dmRooms.get(uid);
     if (room) room.unread = 0;
     const info = friendsMap.get(uid);
     const live = onlineUsers.get(uid);
+    dmAvatar.innerHTML = "";
+    dmAvatar.appendChild(
+      makeAvatarEl({ name: live?.name || info?.name, hue: info?.hue, photo: live?.photo || info?.photo })
+    );
     dmTitle.textContent = "@ " + (live?.name || info?.name || "Amigo");
     updateDmStatus();
     renderDmMessages(uid);
-    renderFriendsPanel();
-    updateFriendsBadge();
+    dmInput.focus();
+  } else if (isGroup) {
+    const gid = activeChannel.slice(4);
+    const g = groupsMap.get(gid);
+    const room = groupRooms.get(gid);
+    if (room) room.unread = 0;
+    const nMembers = g?.members ? Object.keys(g.members).length : 0;
+    dmTitle.textContent = "# " + (g?.name || "grupo");
+    dmStatusEl.textContent = nMembers + (nMembers === 1 ? " membro" : " membros");
+    renderDmMessages(gid);
     dmInput.focus();
   } else {
-    renderFriendsPanel();
     msgInput.focus();
   }
+  renderFriendsPanel();
+  updateFriendsBadge();
 }
 
 function updateDmStatus() {
-  if (activeChannel === "global") return;
-  dmStatusEl.textContent = onlineUsers.has(activeChannel) ? "🟢 online" : "⚫ offline";
+  if (!activeChannel.startsWith("dm:")) return;
+  const uid = activeChannel.slice(3);
+  dmStatusEl.textContent = onlineUsers.has(uid) ? "🟢 online" : "⚫ offline";
 }
 
 // ---------- Perfil e foto ----------
@@ -1556,8 +1610,8 @@ openAddFriend.addEventListener("click", () => {
 
 addFriendClose.addEventListener("click", () => addFriendPanel.classList.add("hidden"));
 
-function renderDmMessages(uid) {
-  const room = dmRooms.get(uid);
+function renderDmMessages(key) {
+  const room = dmRooms.get(key) || groupRooms.get(key);
   if (!room) return;
   dmMessagesEl.innerHTML = "";
   for (const m of room.msgs) appendDmBubble(m);
@@ -1600,7 +1654,7 @@ function renderFriendsPanel() {
   sidebarRequests.innerHTML = "";
   for (const [uid, info] of pendingRequests) {
     sidebarRequests.appendChild(
-      makeUserRow(uid, info, [
+      makeUserRow(uid, { ...info, photo: onlineUsers.get(uid)?.photo }, [
         mkBtn("✅", "Aceitar", () => acceptRequest(uid)),
         mkBtn("✖", "Recusar", () => declineRequest(uid)),
       ])
@@ -1622,8 +1676,8 @@ function renderFriendsPanel() {
       return (dmRooms.get(b[0])?.unread || 0) - (dmRooms.get(a[0])?.unread || 0);
     });
     for (const [uid, info] of sorted) {
-      const row = makeUserRow(uid, info, []);
-      if (activeChannel === uid) row.classList.add("active");
+      const row = makeUserRow(uid, { ...info, photo: onlineUsers.get(uid)?.photo }, []);
+      if (activeChannel === "dm:" + uid) row.classList.add("active");
       const dot = document.createElement("span");
       dot.textContent = onlineUsers.has(uid) ? "🟢" : "⚫";
       dot.title = onlineUsers.has(uid) ? "Online" : "Offline";
@@ -1643,6 +1697,7 @@ function renderFriendsPanel() {
   // Se o modal de adicionar amigo estiver aberto, atualiza
   if (!addFriendPanel.classList.contains("hidden")) renderAddFriendList();
 
+  renderGroupsSection();
   updateMyProfileRow();
 }
 
@@ -1682,7 +1737,9 @@ function emptyNote(container, text) {
 }
 
 function updateFriendsBadge() {
-  const unread = [...dmRooms.values()].reduce((s, r) => s + (r.unread || 0), 0);
+  const unread =
+    [...dmRooms.values()].reduce((s, r) => s + (r.unread || 0), 0) +
+    [...groupRooms.values()].reduce((s, r) => s + (r.unread || 0), 0);
   const n = unread + pendingRequests.size;
   if (n > 0) {
     friendsBadge.textContent = n > 99 ? "99+" : String(n);
@@ -1701,26 +1758,290 @@ friendsBtn.addEventListener("click", () => {
 navGlobal.addEventListener("click", () => switchChannel(null));
 
 dmRemove.addEventListener("click", () => {
-  if (activeChannel !== "global") removeFriend(activeChannel);
+  if (activeChannel.startsWith("dm:")) removeFriend(activeChannel.slice(3));
 });
 
 dmForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = dmInput.value.trim().slice(0, 500);
-  const target = activeChannel !== "global" ? activeChannel : null;
-  if (!text || !target) return;
-  const key = roomKeyFor(myUid, target);
-  await push(ref(db, `dm/${key}/messages`), {
-    uid: myUid,
-    name: myName,
-    hue: myHue,
-    text,
-    at: serverTimestamp(),
-  });
-  set(ref(db, `dm/${key}/meta/lastAt`), serverTimestamp()).catch(() => {});
+  if (!text || !db) return;
+
+  if (activeChannel.startsWith("dm:")) {
+    const key = roomKeyFor(myUid, activeChannel.slice(3));
+    await push(ref(db, `dm/${key}/messages`), {
+      uid: myUid,
+      name: myName,
+      hue: myHue,
+      text,
+      at: serverTimestamp(),
+    });
+    set(ref(db, `dm/${key}/meta/lastAt`), serverTimestamp()).catch(() => {});
+  } else if (activeChannel.startsWith("grp:")) {
+    await push(ref(db, `groups/${activeChannel.slice(4)}/messages`), {
+      uid: myUid,
+      name: myName,
+      hue: myHue,
+      text,
+      at: serverTimestamp(),
+    });
+  } else {
+    return;
+  }
+
   dmInput.value = "";
   dmInput.focus();
 });
+
+// ------------------------------------------------------------
+// 👥 Grupos
+// ------------------------------------------------------------
+const sidebarGroupsEl = $("sidebar-groups");
+const openCreateGroup = $("open-create-group");
+const createGroupPanel = $("create-group-panel");
+const createGroupTitle = $("create-group-title");
+const createGroupClose = $("create-group-close");
+const groupNameInput = $("group-name-input");
+const groupMembersList = $("group-members-list");
+const createGroupBtn = $("create-group-btn");
+const dmAvatar = $("dm-avatar");
+const groupInviteBtn = $("group-invite-btn");
+const groupLeaveBtn = $("group-leave-btn");
+
+let groupsMap = new Map();   // gid -> dados do grupo
+let groupRooms = new Map();  // gid -> { unsubs, unread, msgs }
+let groupMode = "create";     // "create" | "add"
+let groupAddGid = null;
+let selectedGroupMembers = new Set();
+let prevGroupCount = 0;
+
+// Botões de ativar som (celulares bloqueiam autoplay com som)
+watchUnmute.addEventListener("click", () => playVideoWithSound(watchVideo, watchUnmute));
+callScreenUnmute.addEventListener("click", () => playVideoWithSound(callScreenVideo, callScreenUnmute));
+
+function setupGroups() {
+  onValue(ref(db, "groups"), (snap) => {
+    const val = snap.val() || {};
+    const before = new Set(groupsMap.keys());
+    groupsMap = new Map();
+    for (const [gid, g] of Object.entries(val)) {
+      if (g && g.members && g.members[myUid]) groupsMap.set(gid, g);
+    }
+    for (const gid of groupsMap.keys()) {
+      if (!before.has(gid) && prevGroupCount > 0) {
+        addSystemMessage(`👥 Você entrou no grupo "${groupsMap.get(gid)?.name || "sem nome"}"!`);
+      }
+    }
+    prevGroupCount = groupsMap.size;
+    reconcileGroupRooms();
+    renderGroupsSection();
+    updateFriendsBadge();
+  });
+}
+
+function reconcileGroupRooms() {
+  // Remove salas de grupos que saí
+  for (const [gid, room] of groupRooms) {
+    if (!groupsMap.has(gid)) {
+      room.unsubs.forEach((u) => u());
+      groupRooms.delete(gid);
+    }
+  }
+  // Cria salas dos meus grupos
+  for (const gid of groupsMap.keys()) {
+    if (groupRooms.has(gid)) continue;
+    const room = { unsubs: [], unread: 0, msgs: [] };
+    groupRooms.set(gid, room);
+    room.unsubs.push(
+      onChildAdded(
+        query(ref(db, `groups/${gid}/messages`), limitToLast(50)),
+        (snap) => {
+          const data = snap.val();
+          if (!data) return;
+          room.msgs.push(data);
+          if (activeChannel === "grp:" + gid) {
+            renderDmMessages(gid);
+          } else if (data.uid !== myUid) {
+            const first = room.unread === 0;
+            room.unread++;
+            updateFriendsBadge();
+            renderGroupsSection();
+            if (first) {
+              addSystemMessage(
+                `💬 ${data.name || "Alguém"} no grupo "${groupsMap.get(gid)?.name || ""}" (veja a barra lateral 👈).`
+              );
+            }
+          }
+        },
+        () => {}
+      )
+    );
+  }
+}
+
+function renderGroupsSection() {
+  sidebarGroupsEl.innerHTML = "";
+  if (!groupsMap.size) {
+    const p = document.createElement("p");
+    p.className = "side-empty";
+    p.textContent = "Nenhum grupo — use o ➕!";
+    sidebarGroupsEl.appendChild(p);
+    return;
+  }
+  for (const [gid, g] of groupsMap) {
+    const room = groupRooms.get(gid);
+    const row = document.createElement("div");
+    row.className = "sidebar-item" + (activeChannel === "grp:" + gid ? " active" : "");
+
+    const av = document.createElement("span");
+    av.className = "avatar group-avatar";
+    av.style.background = `hsl(${hueFromString(g.name || gid)} 60% 40%)`;
+    av.textContent = (g.name || "?").slice(0, 1).toUpperCase();
+
+    const nm = document.createElement("span");
+    nm.className = "friend-name";
+    nm.textContent = g.name || "Grupo";
+    row.append(av, nm);
+
+    if (room && room.unread > 0) {
+      const b = document.createElement("span");
+      b.className = "unread-badge";
+      b.textContent = room.unread > 99 ? "99+" : room.unread;
+      row.appendChild(b);
+    }
+
+    row.addEventListener("click", () => switchChannel("grp:" + gid));
+    sidebarGroupsEl.appendChild(row);
+  }
+}
+
+function openCreateGroupPanel(mode, gid) {
+  groupMode = mode;
+  groupAddGid = gid || null;
+  selectedGroupMembers.clear();
+  if (mode === "add") {
+    createGroupTitle.textContent = "➕ Adicionar ao grupo";
+    groupNameInput.classList.add("hidden");
+    createGroupBtn.textContent = "Adicionar ➜";
+  } else {
+    createGroupTitle.textContent = "👥 Criar grupo";
+    groupNameInput.classList.remove("hidden");
+    groupNameInput.value = "";
+    createGroupBtn.textContent = "Criar grupo ➜";
+  }
+  renderGroupMembersList();
+  createGroupPanel.classList.remove("hidden");
+}
+
+function renderGroupMembersList() {
+  groupMembersList.innerHTML = "";
+  let any = false;
+  for (const [uid, info] of friendsMap) {
+    if (uid === myUid) continue;
+    if (groupMode === "add" && groupAddGid) {
+      const g = groupsMap.get(groupAddGid);
+      if (g && g.members && g.members[uid]) continue; // já é membro
+    }
+    any = true;
+    const row = makeUserRow(uid, { ...info, photo: onlineUsers.get(uid)?.photo }, []);
+    const mark = document.createElement("span");
+    mark.textContent = "☐";
+    row.appendChild(mark);
+    row.addEventListener("click", () => {
+      if (selectedGroupMembers.has(uid)) {
+        selectedGroupMembers.delete(uid);
+        mark.textContent = "☐";
+      } else {
+        selectedGroupMembers.add(uid);
+        mark.textContent = "☑";
+      }
+    });
+    groupMembersList.appendChild(row);
+  }
+  if (!any) emptyNote(groupMembersList, "Você ainda não tem amigos 😴");
+}
+
+async function createGroupAction() {
+  if (groupMode === "add") {
+    const gid = groupAddGid;
+    if (!gid || !selectedGroupMembers.size) {
+      createGroupPanel.classList.add("hidden");
+      return;
+    }
+    for (const uid of selectedGroupMembers) {
+      const info = friendsMap.get(uid);
+      await set(ref(db, `groups/${gid}/members/${uid}`), {
+        name: info?.name || "Alguém",
+        hue: info?.hue ?? 220,
+        at: serverTimestamp(),
+      }).catch(() => {});
+    }
+    const n = selectedGroupMembers.size;
+    createGroupPanel.classList.add("hidden");
+    selectedGroupMembers.clear();
+    addSystemMessage(`👥 ${n} pessoa(s) adicionada(s) ao grupo!`);
+    return;
+  }
+
+  const name = groupNameInput.value.trim();
+  if (!name) {
+    addSystemMessage("⚠️ Dê um nome ao grupo.");
+    return;
+  }
+  if (!selectedGroupMembers.size) {
+    addSystemMessage("⚠️ Escolha pelo menos um amigo para o grupo.");
+    return;
+  }
+
+  const gid = push(ref(db, "groups")).key;
+  const members = {};
+  members[myUid] = { name: myName, hue: myHue, at: serverTimestamp() };
+  for (const uid of selectedGroupMembers) {
+    const info = friendsMap.get(uid);
+    members[uid] = { name: info?.name || "Alguém", hue: info?.hue ?? 220, at: serverTimestamp() };
+  }
+  await set(ref(db, `groups/${gid}`), {
+    name,
+    createdBy: myUid,
+    at: serverTimestamp(),
+    members,
+  }).catch(() => {});
+
+  createGroupPanel.classList.add("hidden");
+  selectedGroupMembers.clear();
+  addSystemMessage(`👥 Grupo "${name}" criado!`);
+  switchChannel("grp:" + gid);
+}
+
+async function leaveGroup() {
+  const gid = activeChannel.startsWith("grp:") ? activeChannel.slice(4) : null;
+  if (!gid) return;
+  const g = groupsMap.get(gid);
+  if (!confirm(`Sair do grupo "${g?.name || ""}"?`)) return;
+  const room = groupRooms.get(gid);
+  if (room) {
+    room.unsubs.forEach((u) => u());
+    groupRooms.delete(gid);
+  }
+  await remove(ref(db, `groups/${gid}/members/${myUid}`)).catch(() => {});
+  // Se o grupo ficou vazio, apaga tudo
+  const snap = await get(ref(db, `groups/${gid}/members`)).catch(() => null);
+  if (snap && (!snap.exists() || !Object.keys(snap.val()).length)) {
+    await remove(ref(db, `groups/${gid}`)).catch(() => {});
+  }
+  switchChannel("global");
+  addSystemMessage("🚪 Você saiu do grupo.");
+}
+
+openCreateGroup.addEventListener("click", () => {
+  if (!db) return;
+  openCreateGroupPanel("create");
+});
+createGroupClose.addEventListener("click", () => createGroupPanel.classList.add("hidden"));
+createGroupBtn.addEventListener("click", createGroupAction);
+groupInviteBtn.addEventListener("click", () => {
+  if (activeChannel.startsWith("grp:")) openCreateGroupPanel("add", activeChannel.slice(4));
+});
+groupLeaveBtn.addEventListener("click", leaveGroup);
 
 // Sinaliza que o app carregou (usado pelo diagnóstico da página)
 window.__chatOk = true;
