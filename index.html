@@ -17,28 +17,35 @@
   <!-- ===== TELA DE LOGIN / REGISTRO ===== -->
   <div id="login-overlay">
     <div class="login-card">
-      <div class="login-logo">💬</div>
-      <h1>Chat Global</h1>
-      <p>Converse com todo mundo, em tempo real.</p>
+      <div id="loading-box" class="login-loading">
+        <div class="login-logo">💬</div>
+        <p>Conectando...</p>
+      </div>
 
-      <form id="login-form">
-        <input id="name-input" type="text" placeholder="Seu nome de usuário" maxlength="20" autocomplete="off" required />
-        <input id="pass-input" type="password" placeholder="Sua senha" minlength="6" autocomplete="current-password" required />
-        <button type="submit">Entrar ➜</button>
-      </form>
+      <div id="auth-box" class="hidden">
+        <div class="login-logo">💬</div>
+        <h1>Chat Global</h1>
+        <p>Converse com todo mundo, em tempo real.</p>
 
-      <form id="register-form" class="hidden">
-        <input id="reg-name-input" type="text" placeholder="Escolha um nome de usuário" maxlength="20" autocomplete="off" required />
-               <input id="reg-pass-input" type="password" placeholder="Crie uma senha (mínimo 6)" minlength="6" autocomplete="new-password" required />
-        <button type="submit">Criar conta ➜</button>
-      </form>
+        <form id="login-form">
+          <input id="name-input" type="text" placeholder="Seu nome de usuário" maxlength="20" autocomplete="off" required />
+          <input id="pass-input" type="password" placeholder="Sua senha" minlength="6" autocomplete="current-password" required />
+          <button type="submit">Entrar ➜</button>
+        </form>
 
-      <p class="login-alt">
-        <span id="show-register">Não tem conta? <b>Registre-se</b></span>
-        <span id="show-login" class="hidden">Já tem conta? <b>Entrar</b></span>
-      </p>
+        <form id="register-form" class="hidden">
+          <input id="reg-name-input" type="text" placeholder="Escolha um nome de usuário" maxlength="20" autocomplete="off" required />
+          <input id="reg-pass-input" type="password" placeholder="Crie uma senha (mínimo 6)" minlength="6" autocomplete="new-password" required />
+          <button type="submit">Criar conta ➜</button>
+        </form>
 
-      <p id="auth-error" class="auth-error hidden"></p>
+        <p class="login-alt">
+          <span id="show-register">Não tem conta? <b>Registre-se</b></span>
+          <span id="show-login" class="hidden">Já tem conta? <b>Entrar</b></span>
+        </p>
+
+        <p id="auth-error" class="auth-error hidden"></p>
+      </div>
     </div>
   </div>
 

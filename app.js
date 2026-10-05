@@ -49,6 +49,8 @@ const firebaseConfig = {
 // ------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
 const loginOverlay = $("login-overlay");
+const loadingBox = $("loading-box");
+const authBox = $("auth-box");
 const loginForm = $("login-form");
 const nameInput = $("name-input");
 const chatEl = $("chat");
@@ -186,9 +188,15 @@ if (isConfigured) {
     } else {
       myUid = "";
       chatEl.classList.add("hidden");
+      loadingBox.classList.add("hidden");
+      authBox.classList.remove("hidden");
       loginOverlay.classList.remove("hidden");
     }
   });
+} else {
+  // Firebase não configurado: mostra direto o formulário
+  loadingBox.classList.add("hidden");
+  authBox.classList.remove("hidden");
 }
 
 function showAuthError(msg) {

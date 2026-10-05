@@ -799,6 +799,51 @@ img.avatar { object-fit: cover; }
   animation: ringShake 1s ease-in-out infinite;
 }
 
+/* ===== Transições ===== */
+.login-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  color: var(--muted);
+}
+.login-loading .login-logo { animation: pulse-soft 1.2s ease-in-out infinite; }
+
+@keyframes pulse-soft {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.18); opacity: .7; }
+}
+
+#auth-box { animation: pop .25s ease-out; }
+
+#chat { animation: fadeIn .35s ease-out; }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+#channel-global, #channel-dm { animation: channelIn .22s ease-out; }
+
+@keyframes channelIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.watch-overlay, .call-panel, .ring-overlay, .call-overlay {
+  animation: fadeScale .25s ease-out;
+}
+
+@keyframes fadeScale {
+  from { opacity: 0; transform: scale(.96); }
+  to { opacity: 1; transform: none; }
+}
+
+.sidebar-item, .friend-row { transition: background .15s ease; }
+
+.member-chip { animation: pop .2s ease-out; }
+
 #messages {
   flex: 1;
   overflow-y: auto;
@@ -828,7 +873,7 @@ img.avatar { object-fit: cover; }
 }
 
 @keyframes pop {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
   to   { opacity: 1; transform: none; }
 }
 
