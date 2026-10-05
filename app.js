@@ -17,6 +17,7 @@ import {
   remove,
   onValue,
   onChildAdded,
+  onChildRemoved,
   onDisconnect,
   query,
   limitToLast,
