@@ -911,29 +911,86 @@ img.avatar { object-fit: cover; }
 
 .react-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 
-.react-btn {
+.react-trigger {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(255, 255, 255, .12);
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 2;
+}
+.bubble:hover .react-trigger { opacity: 1; }
+
+.react-picker {
+  position: absolute;
+  bottom: -46px;
+  right: 0;
+  display: flex;
+  gap: 2px;
+  background: #2b2d31;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 999px;
+  padding: 4px 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  z-index: 5;
+}
+.react-picker button {
+  background: none;
+  border: none;
+  font-size: 19px;
+  padding: 4px 5px;
+  border-radius: 8px;
+  transition: transform .12s;
+}
+.react-picker button:hover { transform: scale(1.3); }
+
+.react-pills {
+  position: absolute;
+  bottom: -12px;
+  left: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 1;
+}
+.react-pills.empty { display: none; }
+
+#messages .msg:has(.react-pills:not(.empty)) { margin-bottom: 12px; }
+
+.react-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(255, 255, 255, .05);
-  border: 1px solid rgba(255, 255, 255, .1);
+  gap: 3px;
+  background: #2b2d31;
+  border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 999px;
-  font-size: 12px;
   padding: 2px 8px;
-  transition: filter .15s;
+  font-size: 13px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+  transition: transform .12s;
 }
-.react-btn:hover { filter: brightness(1.4); }
+.react-pill:hover { transform: scale(1.08); }
 
-.react-btn .count { font-size: 11px; font-weight: 700; color: var(--muted); }
+.react-pill .cnt { font-size: 11px; font-weight: 700; color: var(--text); }
 
-.react-btn.mine {
-  background: rgba(163, 230, 53, .18);
-  border-color: rgba(163, 230, 53, .5);
+.react-pill.mine {
+  background: rgba(163, 230, 53, .22);
+  border-color: rgba(163, 230, 53, .55);
 }
 
-.msg.mine .react-btn { background: rgba(30, 31, 34, .08); border-color: rgba(30, 31, 34, .15); }
-.msg.mine .react-btn.mine { background: rgba(30, 31, 34, .18); }
-.msg.mine .react-btn .count { color: rgba(30, 31, 34, .7); }
+.msg.mine .react-trigger { background: rgba(30, 31, 34, .15); border-color: rgba(30, 31, 34, .25); }
+.msg.mine .react-pill { background: #1e1f22; border-color: rgba(163, 230, 53, .4); }
+.msg.mine .react-pill.mine { background: #2b2d31; }
+
+/* no celular o botão de reagir fica sempre visível */
+@media (max-width: 700px) {
+  .react-trigger { opacity: 1; }
+}
 
 #messages {
   flex: 1;

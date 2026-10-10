@@ -446,6 +446,50 @@ function listenToMessages() {
   });
 }
 
+// Reações estilo WhatsApp
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+function toggleReaction(key, emoji) {
+  const r = ref(db, `reactions/${key}/${emoji}/${myUid}`);
+  get(r)
+    .then((snap) => {
+      if (snap.exists()) remove(r).catch(() => {});
+      else set(r, true).catch(() => {});
+    })
+    .catch(() => {});
+}
+
+function renderReactPills(container, key, data) {
+  container.innerHTML = "";
+  let any = false;
+  for (const [emoji, users] of Object.entries(data || {})) {
+    const uids = users ? Object.keys(users) : [];
+    if (!uids.length) continue;
+    any = true;
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "react-pill" + (uids.includes(myUid) ? " mine" : "");
+    pill.title = "Reagir com " + emoji;
+    const em = document.createElement("span");
+    em.textContent = emoji;
+    const cnt = document.createElement("span");
+    cnt.className = "cnt";
+    cnt.textContent = uids.length > 1 ? String(uids.length) : "";
+    pill.append(em, cnt);
+    pill.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleReaction(key, emoji);
+    });
+    container.appendChild(pill);
+  }
+  container.classList.toggle("empty", !any);
+}
+
+// Fecha os popovers de reação ao clicar fora
+document.addEventListener("click", () => {
+  document.querySelectorAll(".react-picker:not(.hidden)").forEach((p) => p.classList.add("hidden"));
+});
+
 function renderMessage(data, key) {
   if (!data || !data.text) return;
   const mine = data.uid === myUid;
@@ -497,41 +541,45 @@ function renderMessage(data, key) {
     bubble.appendChild(del);
   }
 
-  // Barra de reações (só no chat global — todo mundo vê)
+  // Reações estilo WhatsApp: botão 😊 + pílulas na borda da bolha
   if (key) {
-    const reactBar = document.createElement("div");
-    reactBar.className = "react-bar";
-    for (const em of ["👍", "❤️", "😂", "🔥", "🍋"]) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "react-btn";
-      btn.dataset.emoji = em;
-      const emojiSpan = document.createElement("span");
-      emojiSpan.textContent = em;
-      const count = document.createElement("span");
-      count.className = "count";
-      count.textContent = "";
-      btn.append(emojiSpan, count);
-      btn.addEventListener("click", () => {
-        const r = ref(db, `reactions/${key}/${em}/${myUid}`);
-        if (btn.classList.contains("mine")) {
-          remove(r).catch(() => {});
-        } else {
-          set(r, true).catch(() => {});
-        }
-      });
-      reactBar.appendChild(btn);
-    }
-    bubble.appendChild(reactBar);
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "react-trigger";
+    trigger.title = "Reagir";
+    trigger.textContent = "😊";
 
-    // Contadores de reações em tempo real
-    const unsubReactions = onValue(ref(db, `reactions/${key}`), (snap) => {
-      const data = snap.val() || {};
-      reactBar.querySelectorAll(".react-btn").forEach((btn) => {
-        const users = data[btn.dataset.emoji] ? Object.keys(data[btn.dataset.emoji]) : [];
-        btn.querySelector(".count").textContent = users.length ? String(users.length) : "";
-        btn.classList.toggle("mine", users.includes(myUid));
+    const picker = document.createElement("div");
+    picker.className = "react-picker hidden";
+    for (const em of REACTION_EMOJIS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.title = em;
+      b.textContent = em;
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleReaction(key, em);
+        picker.classList.add("hidden");
       });
+      picker.appendChild(b);
+    }
+
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wasOpen = !picker.classList.contains("hidden");
+      document
+        .querySelectorAll(".react-picker:not(.hidden)")
+        .forEach((p) => p.classList.add("hidden"));
+      if (!wasOpen) picker.classList.remove("hidden");
+    });
+
+    const pills = document.createElement("div");
+    pills.className = "react-pills empty";
+
+    bubble.append(trigger, picker, pills);
+
+    const unsubReactions = onValue(ref(db, `reactions/${key}`), (snap) => {
+      renderReactPills(pills, key, snap.val());
     });
     reactionUnsubs.set(key, unsubReactions);
   }
