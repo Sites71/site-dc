@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#1e1f22" />
+  <meta name="theme-color" content="#0b0d14" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
   <title>🍋 Limon</title>
   <meta name="description" content="Limon — chat global em tempo real, 100% estático, hospedado no GitHub Pages." />
   <link rel="icon" href="logo.svg" type="image/svg+xml" />
@@ -27,7 +30,7 @@
       </div>
 
       <div id="auth-box" class="hidden">
-        <img src="logo.svg" class="logo-img" alt="Limon" />
+        <img src="brand.jpg" class="brand-hero" alt="Limon" />
         <h1>Limon</h1>
         <p>Converse com todo mundo, em tempo real.</p>
 
@@ -56,20 +59,28 @@
   <!-- ===== CHAT ===== -->
   <main id="chat" class="hidden">
     <header>
-      <div class="brand"><img src="logo.svg" class="logo-img logo-sm" alt="Limon" /><span>Limon</span></div>
+      <div class="brand"><img src="brand.jpg" class="brand-img" alt="Limon" /></div>
       <div class="header-right">
         <button id="clear-chat" type="button" class="hdr-btn hidden" title="Limpar todo o chat (adm)">🧹</button>
-        <button id="stream-kill" type="button" class="hdr-btn hidden" title="Encerrar transmissão de tela (adm)">🛑</button>
-        <button id="download-btn" type="button" class="hdr-btn" title="Baixar o app Limon">⬇️</button>
-        <button id="friends-btn" type="button" title="Amigos">👥<span id="friends-badge" class="friends-badge hidden"></span></button>
-        <button id="call-btn" type="button" title="Chamada de voz em grupo">📞</button>
-        <button id="stream-btn" type="button" title="Transmitir sua tela">🖥️</button>
-        <button id="logout-btn" type="button" class="hdr-btn" title="Sair da conta">👋</button>
+        <button id="stream-kill" type="button" class="hdr-btn hidden" title="Encerrar transmissão (adm)">🛑</button>
         <div id="online-count" class="online-pill" title="Usuários conectados agora">🟢 conectando...</div>
       </div>
     </header>
 
     <div class="layout">
+      <!-- ===== Rail de navegação (estilo Discord) ===== -->
+      <nav id="rail">
+        <button id="rail-home" class="rail-logo-btn" title="Limon — Chat Global"><img src="brand.jpg" class="rail-logo" alt="Limon" /></button>
+        <div class="rail-divider"></div>
+        <button id="rail-global" class="rail-btn" title="Chat Global">🌐</button>
+        <button id="rail-wallpaper" class="rail-btn" title="Tema do chat">🎨</button>
+        <button id="download-btn" class="rail-btn" title="Baixar o app Limon">⬇️</button>
+        <button id="call-btn" class="rail-btn" title="Chamada de voz em grupo">📞</button>
+        <button id="stream-btn" class="rail-btn hidden" title="Transmitir sua tela (adm)">🖥️</button>
+        <button id="friends-btn" class="rail-btn" title="Amigos">👥<span id="friends-badge" class="friends-badge hidden"></span></button>
+        <div class="rail-spacer"></div>
+        <button id="logout-btn" class="rail-btn" title="Sair da conta">👋</button>
+      </nav>
       <!-- ===== Barra lateral (estilo Discord) ===== -->
       <aside id="sidebar">
         <div class="sidebar-scroll">
@@ -109,10 +120,18 @@
           </div>
           <div id="messages"></div>
           <div id="typing-indicator" class="typing-indicator"></div>
-          <form id="message-form">
-            <input id="message-input" type="text" placeholder="Digite sua mensagem..." maxlength="500" autocomplete="off" required />
-            <button type="submit" title="Enviar">➤</button>
+          <div id="reply-bar" class="reply-bar hidden">
+            <span id="reply-info"></span>
+            <button id="reply-cancel" type="button" title="Cancelar resposta">✕</button>
+          </div>
+          <form id="message-form" class="msg-composer">
+            <button type="button" id="emoji-btn" class="composer-btn" title="Emojis">😊</button>
+            <button type="button" id="attach-btn" class="composer-btn" title="Enviar imagem">📎</button>
+            <input id="message-input" type="text" placeholder="Converse no Limon…" maxlength="500" autocomplete="off" />
+            <button type="submit" class="composer-send" title="Enviar">➤</button>
+            <input id="attach-input" type="file" accept="image/*" class="hidden" />
           </form>
+          <div id="emoji-panel" class="emoji-panel hidden"></div>
         </div>
 
         <!-- Canal: conversa privada -->
@@ -246,6 +265,23 @@
       <div id="install-steps" class="install-steps hidden"></div>
       <p class="muted-note">Funciona também em:</p>
       <div id="os-list" class="os-list"></div>
+    </div>
+  </div>
+
+  <!-- 🎨 Tema do chat -->
+  <div id="wallpaper-panel" class="call-panel hidden">
+    <div class="call-box">
+      <div class="call-box-head">
+        <h3>🎨 Tema do chat</h3>
+        <button id="wallpaper-close" type="button" class="icon-btn">✕</button>
+      </div>
+      <p class="muted-note">Escolha o papel de parede da área de conversa:</p>
+      <div class="wp-grid">
+        <button class="wp-opt" data-wp="">◻ Padrão (escuro)</button>
+        <button class="wp-opt wp-a" data-wp="wp-a">🌌 Meia-noite</button>
+        <button class="wp-opt wp-b" data-wp="wp-b">🌿 Floresta</button>
+        <button class="wp-opt wp-c" data-wp="wp-c">🔮 Nebulosa</button>
+      </div>
     </div>
   </div>
 

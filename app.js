@@ -150,6 +150,37 @@ function playVideoWithSound(video, unmuteBtn) {
   }
 }
 
+// Formata texto da mensagem: **negrito**, `código` e links (seguro, sem HTML)
+function formatMessage(container, raw) {
+  const src = raw || "";
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s]+)/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    if (m.index > last) container.appendChild(document.createTextNode(src.slice(last, m.index)));
+    const tok = m[0];
+    if (tok.startsWith("**")) {
+      const b = document.createElement("b");
+      b.textContent = tok.slice(2, -2);
+      container.appendChild(b);
+    } else if (tok.startsWith("`")) {
+      const c = document.createElement("code");
+      c.className = "code-inline";
+      c.textContent = tok.slice(1, -1);
+      container.appendChild(c);
+    } else {
+      const a = document.createElement("a");
+      a.href = tok;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = tok;
+      container.appendChild(a);
+    }
+    last = m.index + tok.length;
+  }
+  if (last < src.length) container.appendChild(document.createTextNode(src.slice(last)));
+}
+
 function addSystemMessage(text) {
   const div = document.createElement("div");
   div.className = "system";
@@ -503,6 +534,20 @@ function renderMessage(data, key) {
   const bubble = document.createElement("div");
   bubble.className = "bubble";
 
+  // Citação de resposta (se for reply)
+  if (data.replyTo) {
+    const rq = document.createElement("div");
+    rq.className = "reply-quote";
+    const rn = document.createElement("span");
+    rn.className = "rq-name";
+    rn.textContent = "↩ " + (data.replyTo.name || "Alguém");
+    const rt = document.createElement("span");
+    rt.className = "rq-text";
+    rt.textContent = data.replyTo.text || (data.replyTo.img ? "📷 imagem" : "");
+    rq.append(rn, rt);
+    bubble.appendChild(rq);
+  }
+
   // Cabeçalho: avatar + nome + hora
   const head = document.createElement("div");
   head.className = "msg-head";
@@ -523,15 +568,23 @@ function renderMessage(data, key) {
 
   head.append(avatar, nm, tm);
 
-  // Corpo da mensagem — textContent impede injeção de HTML (XSS)
+  // Corpo da mensagem (texto com formatação e/ou imagem anexada)
   const txt = document.createElement("div");
   txt.className = "text";
-  txt.textContent = data.text;
+  if (data.img) {
+    const img = document.createElement("img");
+    img.className = "msg-image";
+    img.src = data.img;
+    img.alt = "imagem";
+    img.addEventListener("click", () => window.open(data.img, "_blank"));
+    txt.appendChild(img);
+  }
+  if (data.text) formatMessage(txt, data.text);
 
   bubble.append(head, txt);
 
-  // Admin pode apagar qualquer mensagem
-  if (isAdmin && key) {
+  // Admin pode apagar QUALQUER mensagem; usuário comum apaga só as SUAS
+  if (key && (isAdmin || data.uid === myUid)) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "del-btn";
@@ -575,6 +628,18 @@ function renderMessage(data, key) {
       if (!wasOpen) picker.classList.remove("hidden");
     });
 
+    // Botão de responder
+    const replyBtn = document.createElement("button");
+    replyBtn.type = "button";
+    replyBtn.className = "reply-btn";
+    replyBtn.title = "Responder";
+    replyBtn.textContent = "↩";
+    replyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setReply(data);
+    });
+    bubble.appendChild(replyBtn);
+
     const pills = document.createElement("div");
     pills.className = "react-pills empty";
 
@@ -612,11 +677,13 @@ msgForm.addEventListener("submit", (e) => {
     hue: myHue,
     uid: myUid,
     admin: isAdmin,
+    replyTo: replyTarget || null,
     at: serverTimestamp(),
   });
 
   msgInput.value = "";
   msgInput.focus();
+  clearReply();
 });
 
 // Avisa os outros que estou digitando
@@ -1686,6 +1753,7 @@ function switchChannel(ch) {
   $("channel-global").classList.toggle("hidden", showPanel);
   $("channel-dm").classList.toggle("hidden", !showPanel);
   navGlobal.classList.toggle("active", !showPanel);
+  $("rail-global").classList.toggle("active", !showPanel);
 
   // Botões do cabeçalho do canal (dependem do tipo)
   dmAvatar.classList.toggle("hidden", !isDm);
@@ -1851,7 +1919,7 @@ function appendDmBubble(m) {
 
   const txt = document.createElement("div");
   txt.className = "text";
-  txt.textContent = m.text || "";
+  formatMessage(txt, m.text);
 
   bubble.append(head, txt);
   wrap.appendChild(bubble);
@@ -2360,6 +2428,130 @@ installNowBtn.addEventListener("click", async () => {
   }
   window.__deferredPrompt = null;
   installNowBtn.classList.add("hidden");
+});
+
+// ------------------------------------------------------------
+// ✉️ Composer: emojis, imagens e respostas
+// ------------------------------------------------------------
+const emojiBtn = $("emoji-btn");
+const emojiPanel = $("emoji-panel");
+const attachBtn = $("attach-btn");
+const attachInput = $("attach-input");
+const replyBar = $("reply-bar");
+const replyInfo = $("reply-info");
+const replyCancel = $("reply-cancel");
+const mainPanel = $("main-panel");
+
+let replyTarget = null;
+
+const COMPOSER_EMOJIS = [
+  "😀", "😄", "😁", "😅", "😂", "🙂", "😉", "😊", "😍", "🤩", "😎", "🤔",
+  "😐", "😴", "🙄", "😭", "🥳", "🥺", "👍", "👎", "👏", "🙏", "💪", "🔥",
+  "✨", "🍋", "💚", "❤️", "💜", "🎉", "👀", "☕", "🍕", "💀",
+];
+
+for (const em of COMPOSER_EMOJIS) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = em;
+  b.addEventListener("click", () => {
+    const s = msgInput.selectionStart, e = msgInput.selectionEnd;
+    msgInput.value = msgInput.value.slice(0, s) + em + msgInput.value.slice(e);
+    msgInput.selectionStart = msgInput.selectionEnd = s + em.length;
+    msgInput.focus();
+    sendTyping();
+  });
+  emojiPanel.appendChild(b);
+}
+
+emojiBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  emojiPanel.classList.toggle("hidden");
+});
+document.addEventListener("click", () => emojiPanel.classList.add("hidden"));
+
+// ----- Anexar imagem (comprimida automaticamente) -----
+attachBtn.addEventListener("click", () => attachInput.click());
+
+attachInput.addEventListener("change", () => {
+  const file = attachInput.files && attachInput.files[0];
+  attachInput.value = "";
+  if (!file || !db) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = async () => {
+      const max = 320;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+      await push(ref(db, "messages"), {
+        name: myName,
+        hue: myHue,
+        uid: myUid,
+        admin: isAdmin,
+        img: dataUrl,
+        at: serverTimestamp(),
+      });
+      addSystemMessage("📷 Imagem enviada!");
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+// ----- Responder mensagem -----
+function setReply(data) {
+  replyTarget = {
+    name: data.name || "Alguém",
+    text: data.text ? data.text.slice(0, 80) : "",
+    img: !!data.img,
+  };
+  replyInfo.textContent =
+    `↩ Respondendo a ${replyTarget.name}: ` +
+    (replyTarget.text || (replyTarget.img ? "📷 imagem" : "mensagem"));
+  replyBar.classList.remove("hidden");
+  msgInput.focus();
+}
+
+function clearReply() {
+  replyTarget = null;
+  replyBar.classList.add("hidden");
+}
+
+replyCancel.addEventListener("click", clearReply);
+
+// ------------------------------------------------------------
+// 🎨 Tema do chat (papel de parede) + atalhos do rail
+// ------------------------------------------------------------
+const wallpaperPanel = $("wallpaper-panel");
+const wallpaperCloseBtn = $("wallpaper-close");
+const railWallpaper = $("rail-wallpaper");
+const railGlobalBtn = $("rail-global");
+const railHomeBtn = $("rail-home");
+
+railGlobalBtn.addEventListener("click", () => navGlobal.click());
+railHomeBtn.addEventListener("click", () => navGlobal.click());
+
+function applyWallpaper(wp) {
+  mainPanel.classList.remove("wp-a", "wp-b", "wp-c");
+  if (wp) mainPanel.classList.add(wp);
+  localStorage.setItem("limon-wp", wp || "");
+}
+applyWallpaper(localStorage.getItem("limon-wp") || "");
+
+railWallpaper.addEventListener("click", () => wallpaperPanel.classList.remove("hidden"));
+wallpaperCloseBtn.addEventListener("click", () => wallpaperPanel.classList.add("hidden"));
+
+document.querySelectorAll(".wp-opt").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    applyWallpaper(btn.dataset.wp || "");
+    wallpaperPanel.classList.add("hidden");
+    addSystemMessage("🎨 Tema do chat atualizado!");
+  });
 });
 
 // Sinaliza que o app carregou (usado pelo diagnóstico da página)
