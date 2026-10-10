@@ -296,6 +296,8 @@ function authErrorMessage(err) {
   if (code === "auth/operation-not-allowed")
     return "Ative 'Email/Password' no Firebase → Authentication (veja o README!).";
   if (code === "auth/invalid-email") return "Nome inválido — use letras e números.";
+  if (code === "auth/unauthorized-domain")
+    return "Domínio ainda não liberado! No Firebase: Authentication → Configurações → Domínios autorizados → adicione \"sites71.github.io\".";
   return "Erro ao entrar: " + (err?.message || code);
 }
 
