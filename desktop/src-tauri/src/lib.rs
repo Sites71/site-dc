@@ -1,0 +1,7 @@
+// Limon — janela nativa com o site embutido
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .run(tauri::generate_context!())
+        .expect("erro ao iniciar o Limon");
+}

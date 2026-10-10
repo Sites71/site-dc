@@ -159,6 +159,88 @@ function addSystemMessage(text) {
 }
 
 // ------------------------------------------------------------
+// 🔔 Notificações do navegador (quando a aba está em segundo plano)
+// ------------------------------------------------------------
+function ensureNotifyPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    try {
+      const p = Notification.requestPermission();
+      if (p && p.catch) p.catch(() => {});
+    } catch {}
+  }
+}
+
+function notifyUser(title, body) {
+  if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+    try {
+      const n = new Notification(title, { body, icon: "logo.svg" });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {}
+  }
+}
+
+// ------------------------------------------------------------
+// ⌨️ Indicador "digitando..."
+// ------------------------------------------------------------
+const typingTimers = {};
+let typingData = {};
+const reactionUnsubs = new Map(); // msgKey -> unsubscribe das reações
+
+function typingPathFor(ch) {
+  if (!ch || ch === "global") return "global";
+  if (ch.startsWith("dm:")) return "dm_" + roomKeyFor(myUid, ch.slice(3));
+  if (ch.startsWith("grp:")) return "grp_" + ch.slice(4);
+  return null;
+}
+
+function sendTyping() {
+  const path = typingPathFor(activeChannel);
+  if (!db || !path) return;
+  const r = ref(db, `typing/${path}/${myUid}`);
+  set(r, { name: myName, at: serverTimestamp() }).catch(() => {});
+  onDisconnect(r).remove();
+  clearTimeout(typingTimers[path]);
+  typingTimers[path] = setTimeout(() => remove(r).catch(() => {}), 2500);
+}
+
+function stopTyping() {
+  const path = typingPathFor(activeChannel);
+  if (!db || !path) return;
+  clearTimeout(typingTimers[path]);
+  remove(ref(db, `typing/${path}/${myUid}`)).catch(() => {});
+}
+
+function setupTypingIndicator() {
+  onValue(ref(db, "typing"), (snap) => {
+    typingData = snap.val() || {};
+    renderTypingIndicator();
+  });
+}
+
+function renderTypingIndicator() {
+  const elGlobal = $("typing-indicator");
+  const elDm = $("typing-indicator-dm");
+  if (elGlobal) elGlobal.textContent = "";
+  if (elDm) elDm.textContent = "";
+  const path = typingPathFor(activeChannel);
+  if (!path) return;
+  const now = Date.now();
+  const entries = Object.entries(typingData[path] || {}).filter(
+    ([uid, info]) => uid !== myUid && info && info.at && now - info.at < 4000
+  );
+  if (!entries.length) return;
+  const names = entries.slice(0, 2).map(([, i]) => i.name || "Alguém");
+  let txt = "✍️ " + names.join(" e ");
+  if (entries.length > 2) txt += ` e mais ${entries.length - 2}`;
+  txt += entries.length === 1 ? " está digitando..." : " estão digitando...";
+  const target = activeChannel === "global" ? elGlobal : elDm;
+  if (target) target.textContent = txt;
+}
+
+// ------------------------------------------------------------
 // 🔐 Registro e login (Firebase Authentication)
 // ------------------------------------------------------------
 if (isConfigured) {
@@ -325,6 +407,8 @@ function enterChat(prof) {
   setupCalls();
   setupFriends();
   setupGroups();
+  setupTypingIndicator();
+  ensureNotifyPermission();
   addSystemMessage(`Bem-vindo, ${myName}! 👋`);
 }
 
@@ -333,9 +417,18 @@ function enterChat(prof) {
 // ------------------------------------------------------------
 function listenToMessages() {
   const q = query(ref(db, "messages"), limitToLast(100));
+  // ignora o replay do histórico nas notificações
+  let notifyLive = false;
+  setTimeout(() => (notifyLive = true), 2500);
   onChildAdded(
     q,
-    (snap) => renderMessage(snap.val(), snap.key),
+    (snap) => {
+      const data = snap.val();
+      renderMessage(data, snap.key);
+      if (notifyLive && data && data.uid !== myUid) {
+        notifyUser(`💬 ${data.name || "Alguém"} no chat global`, data.text || "");
+      }
+    },
     () =>
       addSystemMessage(
         "⚠️ Sem permissão para ler o banco. Verifique as regras do Realtime Database (veja o README)."
@@ -345,6 +438,11 @@ function listenToMessages() {
   onChildRemoved(q, (snap) => {
     const el = messagesEl.querySelector(`[data-key="${snap.key}"]`);
     if (el) el.remove();
+    const u = reactionUnsubs.get(snap.key);
+    if (u) {
+      u();
+      reactionUnsubs.delete(snap.key);
+    }
   });
 }
 
@@ -399,6 +497,45 @@ function renderMessage(data, key) {
     bubble.appendChild(del);
   }
 
+  // Barra de reações (só no chat global — todo mundo vê)
+  if (key) {
+    const reactBar = document.createElement("div");
+    reactBar.className = "react-bar";
+    for (const em of ["👍", "❤️", "😂", "🔥", "🍋"]) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "react-btn";
+      btn.dataset.emoji = em;
+      const emojiSpan = document.createElement("span");
+      emojiSpan.textContent = em;
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = "";
+      btn.append(emojiSpan, count);
+      btn.addEventListener("click", () => {
+        const r = ref(db, `reactions/${key}/${em}/${myUid}`);
+        if (btn.classList.contains("mine")) {
+          remove(r).catch(() => {});
+        } else {
+          set(r, true).catch(() => {});
+        }
+      });
+      reactBar.appendChild(btn);
+    }
+    bubble.appendChild(reactBar);
+
+    // Contadores de reações em tempo real
+    const unsubReactions = onValue(ref(db, `reactions/${key}`), (snap) => {
+      const data = snap.val() || {};
+      reactBar.querySelectorAll(".react-btn").forEach((btn) => {
+        const users = data[btn.dataset.emoji] ? Object.keys(data[btn.dataset.emoji]) : [];
+        btn.querySelector(".count").textContent = users.length ? String(users.length) : "";
+        btn.classList.toggle("mine", users.includes(myUid));
+      });
+    });
+    reactionUnsubs.set(key, unsubReactions);
+  }
+
   wrap.appendChild(bubble);
 
   // Só rola para o fim se o usuário já estava perto do fim (ou é msg dele)
@@ -416,6 +553,9 @@ msgForm.addEventListener("submit", (e) => {
   const text = msgInput.value.trim().slice(0, 500);
   if (!text || !db) return;
 
+  ensureNotifyPermission();
+  stopTyping();
+
   push(ref(db, "messages"), {
     name: myName,
     text,
@@ -428,6 +568,9 @@ msgForm.addEventListener("submit", (e) => {
   msgInput.value = "";
   msgInput.focus();
 });
+
+// Avisa os outros que estou digitando
+msgInput.addEventListener("input", () => sendTyping());
 
 // ------------------------------------------------------------
 // Presença (usuários online)
@@ -506,10 +649,15 @@ const stateRef = () => ref(db, "stream/state");
 const myViewerRef = () => ref(db, `stream/viewers/${myUid}`);
 
 function setupStreaming() {
+  let prevHost = null;
   onValue(stateRef(), (snap) => {
     const st = snap.val();
     if (st && st.active) {
       liveName = st.name || "Alguém";
+      if (st.uid !== myUid && st.uid !== prevHost) {
+        notifyUser(`🔴 ${liveName} está ao vivo!`, "Clique no banner vermelho para assistir.");
+      }
+      prevHost = st.uid;
       if (st.uid === myUid) {
         iAmLive = true;
         streamBtn.classList.add("on");
@@ -521,6 +669,7 @@ function setupStreaming() {
       liveBanner.classList.remove("hidden");
     } else {
       liveName = "";
+      prevHost = null;
       liveBanner.classList.add("hidden");
       streamBtn.classList.remove("on");
       streamKillBtn.classList.add("hidden");
@@ -754,6 +903,7 @@ function showRing(inv) {
   ringAvatar.innerHTML = "";
   ringAvatar.appendChild(makeAvatarEl({ name: inv.hostName, hue: inv.hue, photo: inv.photo }));
   ringOverlay.classList.remove("hidden");
+  notifyUser("📞 " + (inv.hostName || "Alguém"), "Chamada de voz em grupo — toque para atender!");
 }
 
 // ---------- Painel de seleção ----------
@@ -1465,6 +1615,7 @@ function reconcileDmListeners() {
             renderFriendsPanel();
             if (first) {
               addSystemMessage(`💬 ${data.name || "Alguém"} te mandou uma mensagem privada (veja na barra lateral 👈).`);
+              notifyUser(`💬 ${data.name || "Alguém"} (privado)`, data.text || "");
             }
           }
         },
@@ -1520,6 +1671,7 @@ function switchChannel(ch) {
   } else {
     msgInput.focus();
   }
+  renderTypingIndicator();
   renderFriendsPanel();
   updateFriendsBadge();
 }
@@ -1774,6 +1926,8 @@ dmForm.addEventListener("submit", async (e) => {
   const text = dmInput.value.trim().slice(0, 500);
   if (!text || !db) return;
 
+  stopTyping();
+
   if (activeChannel.startsWith("dm:")) {
     const key = roomKeyFor(myUid, activeChannel.slice(3));
     await push(ref(db, `dm/${key}/messages`), {
@@ -1877,6 +2031,7 @@ function reconcileGroupRooms() {
               addSystemMessage(
                 `💬 ${data.name || "Alguém"} no grupo "${groupsMap.get(gid)?.name || ""}" (veja a barra lateral 👈).`
               );
+              notifyUser(`💬 Grupo: ${groupsMap.get(gid)?.name || ""}`, `${data.name || "Alguém"}: ${data.text || ""}`);
             }
           }
         },
@@ -2050,6 +2205,9 @@ groupInviteBtn.addEventListener("click", () => {
   if (activeChannel.startsWith("grp:")) openCreateGroupPanel("add", activeChannel.slice(4));
 });
 groupLeaveBtn.addEventListener("click", leaveGroup);
+
+// "Digitando..." nas conversas privadas e grupos
+dmInput.addEventListener("input", () => sendTyping());
 
 // ------------------------------------------------------------
 // ⬇️ Download do app (PWA) com detecção de sistema

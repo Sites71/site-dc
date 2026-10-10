@@ -900,6 +900,41 @@ img.avatar { object-fit: cover; }
   color: var(--muted);
 }
 
+/* ===== Digitando + reações ===== */
+.typing-indicator {
+  padding: 2px 22px 4px;
+  font-size: 12.5px;
+  color: #bef264;
+  min-height: 20px;
+  flex: none;
+}
+
+.react-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+.react-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 2px 8px;
+  transition: filter .15s;
+}
+.react-btn:hover { filter: brightness(1.4); }
+
+.react-btn .count { font-size: 11px; font-weight: 700; color: var(--muted); }
+
+.react-btn.mine {
+  background: rgba(163, 230, 53, .18);
+  border-color: rgba(163, 230, 53, .5);
+}
+
+.msg.mine .react-btn { background: rgba(30, 31, 34, .08); border-color: rgba(30, 31, 34, .15); }
+.msg.mine .react-btn.mine { background: rgba(30, 31, 34, .18); }
+.msg.mine .react-btn .count { color: rgba(30, 31, 34, .7); }
+
 #messages {
   flex: 1;
   overflow-y: auto;

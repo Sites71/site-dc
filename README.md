@@ -38,6 +38,24 @@ Apenas o administrador (**👑 LIMON**) pode transmitir a tela para o site intei
 - **Barra lateral esquerda:** "🌐 Chat Global" no topo e seus amigos abaixo (com 🟢/⚫ e badge de não lidas). Clique num amigo para abrir a conversa privada no painel direito; clique em "🌐 Chat Global" para voltar.
 - **Foto de perfil:** clique no seu nome (rodapé da barra lateral) → "Escolher foto". A imagem é cortada em círculo e reduzida para 96×96 automaticamente, e aparece no chat, na lista de amigos e nas presenças.
 
+## 🖥️ App desktop (Tauri)
+
+A pasta `desktop/` tem o projeto Tauri completo — gera instaladores **Windows (.exe/.msi), macOS (.dmg) e Linux (.AppImage/.deb)** com o site embutido (funciona offline, janela nativa com ícone 🍋).
+
+```bash
+cd desktop
+npm install
+npm run build   # instaladores saem em src-tauri/target/release/bundle/
+```
+
+Requisito: [Rust instalado](https://rustup.rs) (a 1ª build baixa as dependências sozinha).
+
+## ✨ Extras
+
+- 🔔 **Notificações do navegador**: mensagens, grupos, chamadas e transmissões avisam quando a aba está minimizada (clique na notificação volta pro site).
+- ✍️ **“Digitando...”**: aparece no chat global, conversas privadas e grupos em tempo real.
+- 👍 **Reações**: 👍 ❤️ 😂 🔥 🍋 nas mensagens do chat global — clique pra reagir, clique de novo pra tirar.
+
 ## 📲 Instalar como app (PWA)
 
 - Botão **⬇️** no topo abre a página de download, que **detecta automaticamente o sistema** (Windows/Mac/Linux/Android/iOS) e mostra o passo a passo certo.
@@ -133,8 +151,9 @@ Um site no GitHub Pages é **público**: qualquer visitante pode abrir o código
 ├── index.html     # interface
 ├── style.css      # visual (estilo Discord, verde-limão Limon)
 ├── app.js         # lógica + integração Firebase
-├── logo.svg       # logo do Limon (usado no site e no app instalado)
+├── logo.svg       # logo do Limon (site + app instalado)
 ├── manifest.json  # PWA: dados do app instalável
 ├── sw.js          # PWA: service worker (cache/offline)
+├── desktop/       # app desktop (Tauri) — gera .exe/.dmg/.AppImage
 └── README.md
 ```

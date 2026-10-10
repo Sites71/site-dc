@@ -1,0 +1,13 @@
+{
+  "name": "limon-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "copy": "node copy-site.js",
+    "dev": "npm run copy && tauri dev",
+    "build": "npm run copy && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
