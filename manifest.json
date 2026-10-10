@@ -1,0 +1,14 @@
+{
+  "name": "Limon — Chat Global",
+  "short_name": "Limon",
+  "description": "Chat em tempo real com amigos, grupos, chamadas de voz e transmissões.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1e1f22",
+  "theme_color": "#1e1f22",
+  "icons": [
+    { "src": "logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

@@ -7,6 +7,10 @@
   <title>🍋 Limon</title>
   <meta name="description" content="Limon — chat global em tempo real, 100% estático, hospedado no GitHub Pages." />
   <link rel="icon" href="logo.svg" type="image/svg+xml" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Limon" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -56,6 +60,7 @@
       <div class="header-right">
         <button id="clear-chat" type="button" class="hdr-btn hidden" title="Limpar todo o chat (adm)">🧹</button>
         <button id="stream-kill" type="button" class="hdr-btn hidden" title="Encerrar transmissão de tela (adm)">🛑</button>
+        <button id="download-btn" type="button" class="hdr-btn" title="Baixar o app Limon">⬇️</button>
         <button id="friends-btn" type="button" title="Amigos">👥<span id="friends-badge" class="friends-badge hidden"></span></button>
         <button id="call-btn" type="button" title="Chamada de voz em grupo">📞</button>
         <button id="stream-btn" type="button" title="Transmitir sua tela">🖥️</button>
@@ -227,6 +232,21 @@
     </div>
   </div>
 
+  <!-- ⬇️ Baixar o app (PWA) -->
+  <div id="download-panel" class="call-panel hidden">
+    <div class="call-box">
+      <div class="call-box-head">
+        <h3>⬇️ Baixar o Limon</h3>
+        <button id="download-close" type="button" class="icon-btn">✕</button>
+      </div>
+      <div id="os-detected" class="os-detected"></div>
+      <button id="install-now" type="button" class="btn-primary hidden">📲 Instalar agora</button>
+      <div id="install-steps" class="install-steps hidden"></div>
+      <p class="muted-note">Funciona também em:</p>
+      <div id="os-list" class="os-list"></div>
+    </div>
+  </div>
+
   <script>
     // Diagnóstico: se algo falhar, aparece na tela em vez de ficar invisível
     window.__chatOk = false;
@@ -248,6 +268,17 @@
         showDiag("⚠️ O app não carregou! Se você abriu o arquivo direto (2 cliques), use o terminal: python -m http.server 8080 e abra http://localhost:8080 — ou veja o erro no Console (F12).");
       }
     }, 3000);
+
+    // 🍋 PWA: registra o service worker e captura o evento de instalação
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    }
+    window.addEventListener("beforeinstallprompt", function (e) {
+      e.preventDefault();
+      window.__deferredPrompt = e;
+      var btn = document.getElementById("install-now");
+      if (btn) btn.classList.remove("hidden");
+    });
   </script>
   <script type="module" src="app.js"></script>
 </body>

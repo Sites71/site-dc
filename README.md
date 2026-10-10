@@ -38,6 +38,14 @@ Apenas o administrador (**👑 LIMON**) pode transmitir a tela para o site intei
 - **Barra lateral esquerda:** "🌐 Chat Global" no topo e seus amigos abaixo (com 🟢/⚫ e badge de não lidas). Clique num amigo para abrir a conversa privada no painel direito; clique em "🌐 Chat Global" para voltar.
 - **Foto de perfil:** clique no seu nome (rodapé da barra lateral) → "Escolher foto". A imagem é cortada em círculo e reduzida para 96×96 automaticamente, e aparece no chat, na lista de amigos e nas presenças.
 
+## 📲 Instalar como app (PWA)
+
+- Botão **⬇️** no topo abre a página de download, que **detecta automaticamente o sistema** (Windows/Mac/Linux/Android/iOS) e mostra o passo a passo certo.
+- O Limon é um **PWA**: no Android/Chrome/Edge aparece “📲 Instalar agora” com 1 clique; no iPhone é Safari → Compartilhar → Adicionar à Tela de Início.
+- Instalado, abre **em tela cheia com ícone próprio**, sem barra de navegador.
+- Funciona **offline** (service worker `sw.js` faz cache do app; o Firebase sempre roda online).
+- Arquivos: `manifest.json` (dados do app) e `sw.js` (service worker).
+
 ## 🔐 Registro, login e conta admin
 
 - Todo mundo cria conta com **nome de usuário + senha** (o e-mail interno é gerado sozinho — ninguém precisa digitar email).
@@ -122,8 +130,11 @@ Um site no GitHub Pages é **público**: qualquer visitante pode abrir o código
 ## 📁 Estrutura
 
 ```
-├── index.html   # interface
-├── style.css    # visual (estilo Discord)
-├── app.js       # lógica + integração Firebase
+├── index.html     # interface
+├── style.css      # visual (estilo Discord, verde-limão Limon)
+├── app.js         # lógica + integração Firebase
+├── logo.svg       # logo do Limon (usado no site e no app instalado)
+├── manifest.json  # PWA: dados do app instalável
+├── sw.js          # PWA: service worker (cache/offline)
 └── README.md
 ```

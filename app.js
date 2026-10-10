@@ -2051,5 +2051,108 @@ groupInviteBtn.addEventListener("click", () => {
 });
 groupLeaveBtn.addEventListener("click", leaveGroup);
 
+// ------------------------------------------------------------
+// ⬇️ Download do app (PWA) com detecção de sistema
+// ------------------------------------------------------------
+const downloadBtn = $("download-btn");
+const downloadPanel = $("download-panel");
+const downloadClose = $("download-close");
+const osDetected = $("os-detected");
+const installNowBtn = $("install-now");
+const installStepsEl = $("install-steps");
+const osList = $("os-list");
+
+const OS_INFO = {
+  android: { icon: "🤖", name: "Android", steps: "Toque em 📲 “Instalar agora” abaixo e confirme.\nO Limon ganha ícone na tela inicial e abre em tela cheia — igual app de loja." },
+  ios: { icon: "🍎", name: "iPhone / iPad", steps: "1. Abra este site no Safari\n2. Toque no botão Compartilhar (quadrado com seta ↗)\n3. Role e toque em “Adicionar à Tela de Início”\n4. Pronto — o Limon vira app 🍋" },
+  windows: { icon: "🪟", name: "Windows", steps: "No Chrome ou Edge: clique no ícone ⊕ (ou 📲) na barra de endereço e depois em “Instalar”." },
+  mac: { icon: "🍎", name: "macOS", steps: "No Chrome ou Edge: clique no ícone ⊕ (ou 📲) na barra de endereço e depois em “Instalar”." },
+  linux: { icon: "🐧", name: "Linux", steps: "No Chrome: clique no ícone ⊕ (ou 📲) na barra de endereço e depois em “Instalar”." },
+  other: { icon: "💻", name: "Seu dispositivo", steps: "Abra em um navegador moderno (Chrome/Edge) e procure a opção de instalar o site como app." },
+};
+
+function detectOS() {
+  const ua = navigator.userAgent;
+  if (/android/i.test(ua)) return "android";
+  if (/iphone|ipad|ipod/i.test(ua)) return "ios";
+  if (/windows/i.test(ua)) return "windows";
+  if (/mac/i.test(ua)) return "mac";
+  if (/linux/i.test(ua)) return "linux";
+  return "other";
+}
+
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function renderDownloadPanel() {
+  const osKey = detectOS();
+  const info = OS_INFO[osKey];
+
+  // Cartão do sistema detectado
+  osDetected.innerHTML = "";
+  const ic = document.createElement("div");
+  ic.className = "os-icon";
+  ic.textContent = info.icon;
+  const nm = document.createElement("div");
+  nm.className = "os-name";
+  nm.textContent = info.name;
+  const tag = document.createElement("div");
+  tag.className = "os-tag";
+  tag.textContent = "sistema detectado";
+  osDetected.append(ic, nm, tag);
+
+  // Botão de instalação nativa (quando o navegador oferece)
+  const installed = isStandalone();
+  installNowBtn.classList.toggle("hidden", installed || !window.__deferredPrompt);
+
+  // Instruções específicas do sistema (ou aviso de já instalado)
+  installStepsEl.innerHTML = "";
+  installStepsEl.classList.remove("hidden");
+  if (installed) {
+    const ok = document.createElement("div");
+    ok.className = "installed-ok";
+    ok.textContent = "✅ Você já está usando o app do Limon!";
+    installStepsEl.appendChild(ok);
+  } else {
+    info.steps.split("\n").forEach((line) => {
+      const p = document.createElement("p");
+      p.textContent = line;
+      installStepsEl.appendChild(p);
+    });
+  }
+
+  // Outras plataformas
+  osList.innerHTML = "";
+  for (const [key, oi] of Object.entries(OS_INFO)) {
+    if (key === osKey || key === "other") continue;
+    const chip = document.createElement("span");
+    chip.className = "os-chip";
+    chip.title = oi.name;
+    chip.textContent = oi.icon + " " + oi.name;
+    osList.appendChild(chip);
+  }
+}
+
+downloadBtn.addEventListener("click", () => {
+  renderDownloadPanel();
+  downloadPanel.classList.remove("hidden");
+});
+
+downloadClose.addEventListener("click", () => downloadPanel.classList.add("hidden"));
+
+installNowBtn.addEventListener("click", async () => {
+  const prompt = window.__deferredPrompt;
+  if (!prompt) return;
+  prompt.prompt();
+  const choice = await prompt.userChoice;
+  if (choice && choice.outcome === "accepted") {
+    addSystemMessage("📲 Limon instalado! Procure o ícone 🍋 na sua tela inicial.");
+    downloadPanel.classList.add("hidden");
+  }
+  window.__deferredPrompt = null;
+  installNowBtn.classList.add("hidden");
+});
+
 // Sinaliza que o app carregou (usado pelo diagnóstico da página)
 window.__chatOk = true;

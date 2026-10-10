@@ -863,6 +863,43 @@ img.avatar { object-fit: cover; }
 .msg.mine .name { color: #3f6212 !important; }
 .msg.mine .time { color: rgba(30, 31, 34, .6); }
 
+/* ===== Download do app (PWA) ===== */
+.os-detected {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(163, 230, 53, .1);
+  border: 1px solid rgba(163, 230, 53, .35);
+  border-radius: 12px;
+  padding: 14px;
+}
+.os-icon { font-size: 30px; }
+.os-name { font-weight: 700; font-size: 16px; }
+.os-tag { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+
+.install-steps {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.install-steps p { margin: 2px 0; }
+
+.installed-ok { color: #a3e635; font-weight: 700; text-align: center; }
+
+.os-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.os-chip {
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 #messages {
   flex: 1;
   overflow-y: auto;
