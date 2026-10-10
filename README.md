@@ -1,4 +1,4 @@
-# 💬 Chat Global — GitHub Pages + Firebase
+# 🍋 Limon — GitHub Pages + Firebase
 
 Chat **global em tempo real**, 100% estático (HTML + CSS + JS puro), feito para rodar no **GitHub Pages** usando o **Firebase Realtime Database** (gratuito) como backend.
 
